@@ -1,0 +1,84 @@
+_format_version: "3.0"
+_transform: true
+
+# Declarative (DB-less) Kong config — TRD 5 "Kong deployed as the cluster
+# ingress". Auth Service's own public/protected endpoint split (see its
+# accounts/views.py permission_classes) is left as-is and NOT re-gated here;
+# Kong's JWT plugin below only fronts the three services that are entirely
+# protected, so there is exactly one place each concern is enforced.
+#
+# NOTE: written against the dev-only RSA keypair in infra/dev-keys — not
+# verified end-to-end yet (Docker wasn't installed at the time this was
+# written). Sanity-check with `docker compose up` once it is, per the root
+# README.
+
+services:
+  - name: auth-service
+    url: http://auth-service:8000
+    routes:
+      - name: auth-routes
+        paths: ["/api/v1/auth"]
+        strip_path: false
+
+  - name: workout-service
+    url: http://workout-service:8000
+    routes:
+      - name: workout-routes
+        paths: ["/api/v1/workouts"]
+        strip_path: false
+    plugins:
+      - name: jwt
+      - name: rate-limiting
+        config:
+          minute: 120
+          policy: local
+
+  - name: analytics-service
+    url: http://analytics-service:8000
+    routes:
+      - name: analytics-routes
+        paths: ["/api/v1/analytics"]
+        strip_path: false
+    plugins:
+      - name: jwt
+      - name: rate-limiting
+        config:
+          minute: 300
+          policy: local
+
+  - name: notification-service
+    url: http://notification-service:8000
+    routes:
+      - name: notification-routes
+        paths: ["/api/v1/notifications"]
+        strip_path: false
+    plugins:
+      - name: jwt
+      - name: rate-limiting
+        config:
+          minute: 60
+          policy: local
+
+consumers:
+  - username: loaded-mobile-app
+    jwt_secrets:
+      - key: loaded-auth-service # must match SIMPLE_JWT["ISSUER"] / JWT_ISSUER env var
+        algorithm: RS256
+        rsa_public_key: |
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqM8OdVg7ti1GFhIxXe7C
+          pa+KG86KMkKfOIat/MfGi/Jo0QkvYER8J7RXpYq0Nguxn1G/mB7sTyHnRvujAmSa
+          JaFqdBYxJ/KJdlLJlyO2Wc0iSOQOtCuZGmiJDn1YbXKMWJElFTHJlvEw+wkCyTFS
+          e42Ga243ud0M18PktRHtsQfeKMVLefiGrSmAMZqVikRh8wTWMxzytY4Hcqm9ewkA
+          FHMx/m78yALdNnjrvqZyJ3W7kT96eHMMziBUNwutdOAVUamIb3ZNADvnytsrddX3
+          ufip+Jm7jna/uCJ72ZJ7FqiAE0wIxUmebDFqClzUdYo7I84hHMIvywUtOOAHf+h9
+          FwIDAQAB
+          -----END PUBLIC KEY-----
+
+plugins:
+  - name: cors
+    config:
+      origins: ["*"] # tighten to the real app origin(s) before production (TRD 3)
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+      headers: ["Authorization", "Content-Type", "X-Request-Id"]
+      credentials: false

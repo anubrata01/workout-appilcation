@@ -1,0 +1,29 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+db.sqlite3
+staticfiles/
+
+# Node / Expo
+node_modules/
+.expo/
+dist/
+web-build/
+
+# Env files
+.env
+.env.local
+
+# Secrets — never commit a private key, even a throwaway dev one.
+# Regenerate locally with infra/dev-keys/generate.sh (see infra/dev-keys/README.md).
+infra/dev-keys/*.pem
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
