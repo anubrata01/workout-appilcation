@@ -1,0 +1,75 @@
+# Local Development Runbook
+**Last updated:** 2026-07-26
+
+Living record of how to run everything and where things currently stand — kept up to date as a safety net independent of any one conversation's context, and as onboarding for anyone else who touches this repo.
+
+## How to run everything locally
+
+Postgres and Redis run as native Windows services (not Docker — see §4). Six terminals:
+
+```bash
+cd "D:\Workout Application 2.0\services\auth-service" && venv\Scripts\python manage.py runserver 0.0.0.0:8001
+cd "D:\Workout Application 2.0\services\workout-service" && venv\Scripts\python manage.py runserver 0.0.0.0:8002
+cd "D:\Workout Application 2.0\services\analytics-service" && venv\Scripts\python manage.py runserver 0.0.0.0:8003
+cd "D:\Workout Application 2.0\services\analytics-service" && venv\Scripts\python manage.py listen_for_events
+cd "D:\Workout Application 2.0\services\notification-service" && venv\Scripts\python manage.py runserver 0.0.0.0:8004
+cd "D:\Workout Application 2.0\services\notification-service" && venv\Scripts\python manage.py send_due_reminders
+```
+
+**Always use `0.0.0.0:<port>`, never bare `<port>`** — plain `runserver 8001` binds to localhost only and a phone on the LAN can't reach it. This has caused real confusion twice already.
+
+Frontend (now on a dev-client build, not Expo Go — see §3):
+```bash
+cd "D:\Workout Application 2.0\app"
+npx expo start --dev-client
+```
+
+## 1. Architecture at a glance
+
+4 Django microservices (Auth, Workout, Analytics, Notification), each with its own Postgres database (`auth_db`, `workout_db`, `analytics_db`, `notif_db`, role `loaded`/`loaded`), JWT (RS256) issued by Auth and verified statelessly by the others, Redis pub/sub connecting Workout → Analytics (`set_logged` event) and Auth → everyone (`account_deleted` event). Full detail in [02-TRD.md](02-TRD.md) and [05-BACKEND-SCHEMA.md](05-BACKEND-SCHEMA.md).
+
+React Native / Expo frontend (SDK 54 — SDK 57 was too new for the Play Store's Expo Go, see git history if curious). Redux Toolkit + RTK Query, one API slice per service.
+
+## 2. Known external IDs (safe to keep here — none of these are secrets themselves)
+
+| What | Value |
+|---|---|
+| Android package name | `com.loadedapp.workout` |
+| Google Cloud project | "LOADED" (separate from the unrelated pre-existing "youtube video downloader" project — don't confuse them) |
+| Google OAuth **Android** client ID | `329080043230-c0m6njc03ecdols7re6qoo8uv4vv8gcd.apps.googleusercontent.com` — package name + SHA-1 only, never used directly as `webClientId` |
+| Google OAuth **Web** client ID | `329080043230-1nigfbim10230vb21vjovi0rnqd44r9s.apps.googleusercontent.com` — this is the one that goes in `services/auth-service/.env` as `GOOGLE_OAUTH_CLIENT_ID` and `app/.env` as `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`; must match exactly in both places |
+| EAS keystore SHA-1 | `E5:7B:14:B7:99:68:AD:16:52:00:B0:A9:DC:31:9B:D9:20:E3:AE:45` — registered on the Google Cloud **Android** OAuth client, must match exactly |
+| Firebase project | `workout-591c3` |
+| EAS project | `loaded-workout-tracker`, account `anubrata31` |
+| Dev LAN IP (for phone testing) | `192.168.0.114` (changed from `.147` on 2026-07-26 — DHCP reassigned it, exactly as this row warned) — re-check with `ipconfig` if API calls silently stop reaching the backend |
+
+**Actual secrets** (never write the values themselves here): JWT RSA keypair (`infra/dev-keys/*.pem`, gitignored), Firebase service account JSON (`services/notification-service/firebase-service-account.json`, gitignored) — **a version of this key was accidentally exposed in a chat transcript on 2026-07-26 and should be rotated if that hasn't happened yet.**
+
+## 3. Frontend build state
+
+Moved off Expo Go on 2026-07-26 — Google Sign-In and push notifications both need native modules Expo Go's sandbox doesn't support. Now using an EAS-built development client (`eas.json` has `development`/`preview`/`production` profiles). To rebuild after a native dependency change: `npx eas-cli build --profile development --platform android`.
+
+**`android.usesCleartextTraffic: true` is required in `app.json`.** Expo Go allows plain HTTP by default; a standalone/EAS dev-client build follows Android's normal policy and silently blocks all cleartext (non-HTTPS) requests otherwise — the app just never reaches the backend, no error surfaces beyond a generic network failure, and the backend logs show zero incoming requests. Since all the LAN API URLs are `http://`, this is required for local dev to work at all on a real build. This is a manifest-level setting — changing it needs a new EAS build, not just a JS reload or Metro restart.
+
+## 4. Deliberately deferred
+
+- **Docker + Kong gateway**: written (`infra/docker-compose.yml`, `gateway/kong.yml`) but never run — `docker compose up` has not been verified end-to-end. Postgres/Redis run natively on Windows instead for now.
+- **CI/CD**: no GitHub Actions set up yet.
+
+## 5. Resolved: Google Sign-In DEVELOPER_ERROR (2026-07-26)
+
+Root cause: `webClientId` was set to the **Android** client's ID instead of a **Web application** client's ID. Package name and SHA-1 on the Android client were correct the whole time — the Android client isn't the one referenced by `GoogleSignin.configure({webClientId})`. Fixed by creating a Web application client in Google Cloud Console (Clients → Create client → Web application, no origins/redirect URIs needed) and pointing both `.env` files at its ID instead (see §2 table). If Google Sign-In stops working again after this, check this class of bug first — it's a known common gotcha with this library, not a fingerprint mismatch.
+
+Confirmed working end-to-end on 2026-07-26. `WelcomeScreen.tsx`'s temporary verbose error alert is still in place (marked `TEMPORARY` in that file) — revert to a plain generic message next time that file is touched.
+
+Other issues found and fixed along the way, in case any recur:
+- **`EXPO_PUBLIC_*` / backend `.env` changes need a process restart**, not just a JS reload — Metro and Django both read env vars once at startup. Metro: stop and rerun `expo start --dev-client`. Django: `Ctrl+C` and rerun `runserver`.
+- **DHCP reassigned the dev LAN IP** mid-project (`.147` → `.114`) — re-check with `ipconfig` whenever the phone can't reach the backend and nothing else has changed.
+- **Windows Firewall blocked inbound traffic to the venv Python processes** on the Public network profile — existing `python.exe` allow-rules pointed at an unrelated global Python install, not the per-service venv executables. Fixed with an explicit port-range rule: `New-NetFirewallRule -DisplayName "LOADED dev backend (8001-8004)" -Direction Inbound -Protocol TCP -LocalPort 8001-8004 -Action Allow -Profile Any` (must run from an elevated PowerShell, not cmd.exe).
+- **A running VPN (ExpressVPN) silently broke LAN traffic** from phone to PC even with the firewall rule in place — its virtual adapter can persist after uninstall until a reboot. If backend connectivity breaks again with no other explanation, check `Get-NetAdapter` for unexpected VPN/tunnel adapters.
+- **`services/auth-service`'s venv was missing the `requests` package**, which `google-auth`'s token-verification transport needs at runtime but doesn't declare as a hard dependency — added `requests>=2.32` to `requirements.txt`.
+- **`google-services.json` (Android FCM client config) was never generated** — needed a matching Android app registered in the `workout-591c3` Firebase project. It's deliberately committed to git (not treated as a secret — see `.gitignore` comment) since EAS Build only bundles files git doesn't ignore, and its API key is meant to be public per Firebase's own docs.
+
+## 6. Test suite status
+
+38 backend tests passing across all 4 services as of the last full run (auth 3, workout 14, analytics 13, notification 8). Frontend: `npx tsc --noEmit` and `npx expo export --platform android` both clean as of the last check.

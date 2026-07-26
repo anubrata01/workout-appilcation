@@ -26,7 +26,11 @@ infra/dev-keys/*.pem
 *firebase-adminsdk*.json
 firebase-service-account*.json
 serviceAccountKey.json
-google-services.json
+
+# google-services.json (Android FCM client config) is deliberately NOT
+# ignored: it contains no secret (Firebase's own docs treat its API key as
+# public — access is controlled by Firebase Security Rules/App Check, not by
+# hiding this file), and EAS Build needs it git-tracked to bundle it.
 
 # OS / editor
 .DS_Store

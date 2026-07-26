@@ -46,15 +46,23 @@ export function ReminderSettings() {
 
   async function handleToggle(next: boolean) {
     if (next) {
-      const token = await requestPushToken();
-      if (!token) {
+      try {
+        const token = await requestPushToken();
+        if (!token) {
+          Alert.alert(
+            "Notifications permission needed",
+            "Enable notifications for LOADED in your phone's settings to use reminders."
+          );
+          return;
+        }
+        await registerDeviceToken({ fcm_token: token }).unwrap();
+      } catch (err) {
         Alert.alert(
-          "Notifications permission needed",
-          "Enable notifications for LOADED in your phone's settings to use reminders."
+          "Couldn't enable reminders",
+          err instanceof Error ? err.message : "Please try again."
         );
         return;
       }
-      await registerDeviceToken({ fcm_token: token });
     }
     save({ enabled: next, days_of_week: days.length ? days : [0, 1, 2, 3, 4], time_of_day: dateToTimeString(time) });
   }
