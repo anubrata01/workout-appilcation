@@ -24,6 +24,7 @@ infra/dev-keys/*.pem
 # actually keep the downloaded file; this just stops the common mistake of
 # dropping it directly into the repo.
 *firebase-adminsdk*.json
+firebase-service-account*.json
 serviceAccountKey.json
 google-services.json
 
