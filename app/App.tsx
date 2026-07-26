@@ -3,11 +3,23 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Provider } from "react-redux";
 import { View } from "react-native";
+import * as Notifications from "expo-notifications";
 
 import { store } from "./src/store";
 import { RootNavigator } from "./src/navigation/RootNavigator";
 import { useAppFonts } from "./src/theme/useAppFonts";
 import { colors } from "./src/theme/tokens";
+
+// Reminders are the only notification kind (PRD/app flow scope) — always
+// show them with sound even while the app's open, same as the OS would.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 export default function App() {
   const fontsLoaded = useAppFonts();

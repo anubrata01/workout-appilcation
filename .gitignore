@@ -19,6 +19,14 @@ web-build/
 # Regenerate locally with infra/dev-keys/generate.sh (see infra/dev-keys/README.md).
 infra/dev-keys/*.pem
 
+# Firebase service account credentials — lets someone send push notifications
+# as this app if it leaks. Point FCM_SERVICE_ACCOUNT_JSON_PATH at wherever you
+# actually keep the downloaded file; this just stops the common mistake of
+# dropping it directly into the repo.
+*firebase-adminsdk*.json
+serviceAccountKey.json
+google-services.json
+
 # OS / editor
 .DS_Store
 Thumbs.db

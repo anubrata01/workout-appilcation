@@ -157,7 +157,13 @@ SERVICE_NAME = "notification-service"
 
 REDIS_URL = os.environ.get("REDIS_URL")
 
-# Celery (beat schedule for reminder sends + FCM client) is implementation plan
-# Phase 4 — not wired yet, so it's deliberately left out of requirements.txt
-# until there's real code using it.
+# Firebase service account credentials — either the full JSON inline (one
+# line, for platforms where only env vars are practical) or a path to the
+# downloaded file (nicer for local dev — see .env.example). Never commit the
+# actual file or value; it grants send-as-this-app push authority.
 FCM_SERVICE_ACCOUNT_JSON = os.environ.get("FCM_SERVICE_ACCOUNT_JSON", "")
+FCM_SERVICE_ACCOUNT_JSON_PATH = os.environ.get("FCM_SERVICE_ACCOUNT_JSON_PATH", "")
+
+# How often the reminder scheduler checks for due reminders (management
+# command send_due_reminders) — see notifications/fcm.py.
+REMINDER_CHECK_INTERVAL_SECONDS = int(os.environ.get("REMINDER_CHECK_INTERVAL_SECONDS", "30"))

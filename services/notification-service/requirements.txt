@@ -9,3 +9,4 @@ redis>=5.0
 gunicorn>=22.0
 whitenoise>=6.7
 python-dotenv>=1.0
+firebase-admin>=6.5

@@ -9,6 +9,10 @@ class ReminderPreference(models.Model):
     days_of_week = models.JSONField(default=list)  # [0..6], 0=Mon
     time_of_day = models.TimeField(null=True, blank=True)
     timezone = models.CharField(max_length=64, default="Asia/Kolkata")
+    # De-dupes sends within the same matching minute across scheduler loop
+    # ticks — a reminder fires at most once per calendar day (in the user's
+    # own timezone), not once per loop iteration that happens to match.
+    last_sent_date = models.DateField(null=True, blank=True)
 
 
 class DeviceToken(models.Model):

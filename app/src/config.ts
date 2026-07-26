@@ -19,3 +19,6 @@ export const WORKOUT_API_URL =
 
 export const ANALYTICS_API_URL =
   process.env.EXPO_PUBLIC_ANALYTICS_API_URL ?? `http://${DEFAULT_HOST}:8003/api`;
+
+export const NOTIFICATION_API_URL =
+  process.env.EXPO_PUBLIC_NOTIFICATION_API_URL ?? `http://${DEFAULT_HOST}:8004/api`;

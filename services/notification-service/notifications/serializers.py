@@ -8,6 +8,11 @@ class ReminderPreferenceSerializer(serializers.ModelSerializer):
         model = ReminderPreference
         fields = ["enabled", "days_of_week", "time_of_day", "timezone"]
 
+    def validate_days_of_week(self, value):
+        if not isinstance(value, list) or not all(isinstance(d, int) and 0 <= d <= 6 for d in value):
+            raise serializers.ValidationError("days_of_week must be a list of integers 0 (Mon) to 6 (Sun).")
+        return value
+
 
 class DeviceTokenSerializer(serializers.ModelSerializer):
     class Meta:
