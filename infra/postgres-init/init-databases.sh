@@ -7,7 +7,7 @@
 set -e
 
 for db in auth_db workout_db analytics_db notif_db; do
-  psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-EOSQL
+  psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
     CREATE DATABASE $db OWNER $POSTGRES_USER;
 EOSQL
 done

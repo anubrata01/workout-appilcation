@@ -9,7 +9,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./postgres-init:/docker-entrypoint-initdb.d
     ports:
-      - "5432:5432"
+      - "5442:5432" # 5432 is taken by the native Postgres install used for local dev
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U loaded"]
       interval: 5s
@@ -19,7 +19,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "6389:6379" # 6379 is taken by the native Redis used for local dev
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -46,7 +46,7 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
     ports:
-      - "8001:8000"
+      - "18001:8000" # 8001 is taken by the native auth-service used for local dev
 
   workout-service:
     build: ../services/workout-service
@@ -66,7 +66,7 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
     ports:
-      - "8002:8000"
+      - "18002:8000" # 8002 is taken by the native workout-service used for local dev
 
   workout-service-events:
     build: ../services/workout-service
@@ -101,7 +101,7 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
     ports:
-      - "8003:8000"
+      - "18003:8000" # 8003 is taken by the native analytics-service used for local dev
 
   analytics-service-events:
     build: ../services/analytics-service
@@ -136,7 +136,7 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
     ports:
-      - "8004:8000"
+      - "18004:8000" # 8004 is taken by the native notification-service used for local dev
 
   notification-service-events:
     build: ../services/notification-service
@@ -164,7 +164,7 @@ services:
       - ../gateway/kong.yml:/kong/kong.yml:ro
     ports:
       - "8080:8000" # API traffic goes through here — the app should point at this in later phases
-      - "8081:8001" # Kong admin API — local/dev only, never expose publicly
+      - "8091:8001" # Kong admin API — local/dev only, never expose publicly (8081 is taken by Metro)
     depends_on:
       - auth-service
       - workout-service

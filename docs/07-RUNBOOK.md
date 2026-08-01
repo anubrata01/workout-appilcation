@@ -51,10 +51,24 @@ Moved off Expo Go on 2026-07-26 — Google Sign-In and push notifications both n
 
 **`android.usesCleartextTraffic: true` is required in `app.json`.** Expo Go allows plain HTTP by default; a standalone/EAS dev-client build follows Android's normal policy and silently blocks all cleartext (non-HTTPS) requests otherwise — the app just never reaches the backend, no error surfaces beyond a generic network failure, and the backend logs show zero incoming requests. Since all the LAN API URLs are `http://`, this is required for local dev to work at all on a real build. This is a manifest-level setting — changing it needs a new EAS build, not just a JS reload or Metro restart.
 
-## 4. Deliberately deferred
+## 4. Docker + Kong gateway
 
-- **Docker + Kong gateway**: written (`infra/docker-compose.yml`, `gateway/kong.yml`) but never run — `docker compose up` has not been verified end-to-end. Postgres/Redis run natively on Windows instead for now.
-- **CI/CD**: no GitHub Actions set up yet.
+Verified end-to-end on 2026-08-01 — all 4 services, Postgres, Redis, and Kong's JWT/rate-limiting/CORS plugins confirmed working, including the cross-service Redis pub/sub pipeline (Workout → Analytics) inside Docker's network. Run with:
+
+```bash
+cd "D:/Workout Application 2.0/infra" && docker compose up -d
+```
+
+Uses **different host ports** than the native dev stack so both can run side by side without conflict: Postgres `5442`, Redis `6389`, auth/workout/analytics/notification `18001`–`18004`, Kong proxy `8080`, Kong admin `8091`. The native stack keeps `5432`/`6379`/`8001`–`8004`.
+
+Bugs found and fixed getting this working (first real run — none of this had been exercised before):
+- All 4 `Dockerfile`s: `adduser --disabled-password` still prompts interactively for GECOS fields on Debian, which hangs a build forever since there's no terminal attached — needed `--gecos ""` too.
+- `infra/postgres-init/init-databases.sh`: `psql --username loaded` with no `--dbname` connects to a database named after the user (`loaded`), which doesn't exist — needed `--dbname "$POSTGRES_DB"` explicitly.
+- `infra/postgres-init/windows-local-setup.sql` (written only for the separate native-Windows setup) was sitting inside `postgres-init/`, which Postgres's Docker image auto-runs on init, colliding with the container's own `POSTGRES_USER` creation. Moved to `infra/windows-local-setup.sql`.
+
+Cosmetic-only: the `*-events` containers (background Redis listeners) never report "healthy" — the `HEALTHCHECK` baked into the image probes an HTTP endpoint that only the `gunicorn` command variant serves, not `listen_for_events`. They work correctly regardless (confirmed via logs and the pub/sub test above); the health status is just misleading if hooked up to real orchestration/monitoring later.
+
+**CI/CD**: no GitHub Actions set up yet.
 
 ## 5. Resolved: Google Sign-In DEVELOPER_ERROR (2026-07-26)
 

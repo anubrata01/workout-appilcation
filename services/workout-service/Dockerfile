@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN adduser --disabled-password --no-create-home appuser && chown -R appuser /app
+RUN adduser --disabled-password --gecos "" --no-create-home appuser && chown -R appuser /app
 USER appuser
 
 EXPOSE 8000
