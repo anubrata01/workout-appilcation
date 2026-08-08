@@ -28,7 +28,7 @@ services:
 
   auth-service:
     build: ../services/auth-service
-    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000"
+    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000"
     environment:
       SECRET_KEY: dev-only-change-before-deploy
       DEBUG: "True"
@@ -50,7 +50,7 @@ services:
 
   workout-service:
     build: ../services/workout-service
-    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000"
+    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000"
     environment:
       SECRET_KEY: dev-only-change-before-deploy
       DEBUG: "True"
@@ -85,7 +85,7 @@ services:
 
   analytics-service:
     build: ../services/analytics-service
-    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000"
+    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000"
     environment:
       SECRET_KEY: dev-only-change-before-deploy
       DEBUG: "True"
@@ -120,7 +120,7 @@ services:
 
   notification-service:
     build: ../services/notification-service
-    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000"
+    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000"
     environment:
       SECRET_KEY: dev-only-change-before-deploy
       DEBUG: "True"

@@ -1,0 +1,166 @@
+# Production override — apply on top of the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production up -d
+#
+# What this changes vs. the base (local/dev) file:
+#   - Postgres, Redis, and each Django service lose their public port mapping.
+#     Only Caddy (80/443) is reachable from the internet; everything else
+#     talks over the private docker network by service name.
+#   - Kong's admin API is never published here at all (base file's 8081/8091
+#     mapping only exists for local debugging).
+#   - Real secrets come from .env.production (gitignored — see
+#     .env.production.example for the required keys), not hardcoded dev
+#     values.
+#   - DEBUG=False everywhere, which activates each service's own
+#     ImproperlyConfigured guard rails if any required prod value is missing.
+#   - JWT keys come from infra/prod-keys (generate with prod-keys/generate.sh,
+#     never reuse infra/dev-keys), and Kong verifies against kong.prod.yml
+#     instead of kong.yml.
+#   - Every service restarts automatically after a crash or VM reboot.
+
+services:
+  postgres:
+    restart: unless-stopped
+    ports: !reset []
+    environment:
+      POSTGRES_USER: loaded
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+
+  redis:
+    restart: unless-stopped
+    ports: !reset []
+
+  auth-service:
+    restart: unless-stopped
+    ports: !reset []
+    volumes:
+      - ./prod-keys:/keys:ro
+    environment:
+      SECRET_KEY: ${AUTH_SECRET_KEY}
+      DEBUG: "False"
+      ALLOWED_HOSTS: ${DOMAIN}
+      DATABASE_URL: postgres://loaded:${POSTGRES_PASSWORD}@postgres:5432/auth_db
+      CORS_ALLOWED_ORIGINS: https://${DOMAIN}
+      JWT_PRIVATE_KEY_PATH: /keys/jwt-private.pem
+      JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
+      JWT_ISSUER: loaded-auth-service
+      REDIS_URL: redis://redis:6379/0
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
+      EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
+
+  workout-service:
+    restart: unless-stopped
+    ports: !reset []
+    volumes:
+      - ./prod-keys:/keys:ro
+    environment:
+      SECRET_KEY: ${WORKOUT_SECRET_KEY}
+      DEBUG: "False"
+      ALLOWED_HOSTS: ${DOMAIN}
+      DATABASE_URL: postgres://loaded:${POSTGRES_PASSWORD}@postgres:5432/workout_db
+      CORS_ALLOWED_ORIGINS: https://${DOMAIN}
+      JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
+      JWT_ISSUER: loaded-auth-service
+      REDIS_URL: redis://redis:6379/0
+
+  workout-service-events:
+    restart: unless-stopped
+    volumes:
+      - ./prod-keys:/keys:ro
+    environment:
+      SECRET_KEY: ${WORKOUT_SECRET_KEY}
+      DATABASE_URL: postgres://loaded:${POSTGRES_PASSWORD}@postgres:5432/workout_db
+      JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
+      JWT_ISSUER: loaded-auth-service
+      REDIS_URL: redis://redis:6379/0
+
+  analytics-service:
+    restart: unless-stopped
+    ports: !reset []
+    volumes:
+      - ./prod-keys:/keys:ro
+    environment:
+      SECRET_KEY: ${ANALYTICS_SECRET_KEY}
+      DEBUG: "False"
+      ALLOWED_HOSTS: ${DOMAIN}
+      DATABASE_URL: postgres://loaded:${POSTGRES_PASSWORD}@postgres:5432/analytics_db
+      CORS_ALLOWED_ORIGINS: https://${DOMAIN}
+      JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
+      JWT_ISSUER: loaded-auth-service
+      REDIS_URL: redis://redis:6379/0
+
+  analytics-service-events:
+    restart: unless-stopped
+    volumes:
+      - ./prod-keys:/keys:ro
+    environment:
+      SECRET_KEY: ${ANALYTICS_SECRET_KEY}
+      DATABASE_URL: postgres://loaded:${POSTGRES_PASSWORD}@postgres:5432/analytics_db
+      JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
+      JWT_ISSUER: loaded-auth-service
+      REDIS_URL: redis://redis:6379/0
+
+  notification-service:
+    restart: unless-stopped
+    ports: !reset []
+    volumes:
+      - ./prod-keys:/keys:ro
+      - ../services/notification-service/firebase-service-account.json:/secrets/firebase-service-account.json:ro
+    environment:
+      SECRET_KEY: ${NOTIFICATION_SECRET_KEY}
+      DEBUG: "False"
+      ALLOWED_HOSTS: ${DOMAIN}
+      DATABASE_URL: postgres://loaded:${POSTGRES_PASSWORD}@postgres:5432/notif_db
+      CORS_ALLOWED_ORIGINS: https://${DOMAIN}
+      JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
+      JWT_ISSUER: loaded-auth-service
+      REDIS_URL: redis://redis:6379/0
+      FCM_SERVICE_ACCOUNT_JSON_PATH: /secrets/firebase-service-account.json
+
+  notification-service-events:
+    restart: unless-stopped
+    volumes:
+      - ./prod-keys:/keys:ro
+    environment:
+      SECRET_KEY: ${NOTIFICATION_SECRET_KEY}
+      DATABASE_URL: postgres://loaded:${POSTGRES_PASSWORD}@postgres:5432/notif_db
+      JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
+      JWT_ISSUER: loaded-auth-service
+      REDIS_URL: redis://redis:6379/0
+
+  gateway:
+    restart: unless-stopped
+    ports: !reset []
+    environment:
+      # Kong sits behind Caddy on the private docker network, not exposed
+      # directly — trust that hop's X-Forwarded-* headers (notably
+      # X-Forwarded-Proto) instead of recomputing them from Kong's own
+      # (plain-HTTP, internal-only) connection to Caddy. Without this, Django's
+      # SECURE_SSL_REDIRECT sees "http" and 301-redirects every request.
+      KONG_TRUSTED_IPS: "0.0.0.0/0,::/0"
+    volumes:
+      - ../gateway/kong.prod.yml:/kong/kong.yml:ro
+    depends_on:
+      - auth-service
+      - workout-service
+      - analytics-service
+      - notification-service
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      DOMAIN: ${DOMAIN}
+    depends_on:
+      - gateway
+
+volumes:
+  caddy-data:
+  caddy-config:

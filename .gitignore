@@ -18,6 +18,8 @@ web-build/
 # Secrets — never commit a private key, even a throwaway dev one.
 # Regenerate locally with infra/dev-keys/generate.sh (see infra/dev-keys/README.md).
 infra/dev-keys/*.pem
+infra/prod-keys/*.pem
+infra/.env.production
 
 # Firebase service account credentials — lets someone send push notifications
 # as this app if it leaks. Point FCM_SERVICE_ACCOUNT_JSON_PATH at wherever you

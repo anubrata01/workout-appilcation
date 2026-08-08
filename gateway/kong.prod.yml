@@ -1,0 +1,84 @@
+_format_version: "3.0"
+_transform: true
+
+# Production variant of kong.yml — same routing/plugin structure, but signed
+# against infra/prod-keys (never infra/dev-keys) and with CORS locked to the
+# real app origin instead of "*". Regenerate the RSA keypair with
+# infra/prod-keys/generate.sh if this ever needs to be rotated, and update
+# the rsa_public_key below to match (public key only — never paste a
+# private key into a file that gets committed).
+
+services:
+  - name: auth-service
+    url: http://auth-service:8000
+    routes:
+      - name: auth-routes
+        paths: ["/api/v1/auth"]
+        strip_path: false
+        preserve_host: true
+
+  - name: workout-service
+    url: http://workout-service:8000
+    routes:
+      - name: workout-routes
+        paths: ["/api/v1/workouts"]
+        strip_path: false
+        preserve_host: true
+    plugins:
+      - name: jwt
+      - name: rate-limiting
+        config:
+          minute: 120
+          policy: local
+
+  - name: analytics-service
+    url: http://analytics-service:8000
+    routes:
+      - name: analytics-routes
+        paths: ["/api/v1/analytics"]
+        strip_path: false
+        preserve_host: true
+    plugins:
+      - name: jwt
+      - name: rate-limiting
+        config:
+          minute: 300
+          policy: local
+
+  - name: notification-service
+    url: http://notification-service:8000
+    routes:
+      - name: notification-routes
+        paths: ["/api/v1/notifications"]
+        strip_path: false
+        preserve_host: true
+    plugins:
+      - name: jwt
+      - name: rate-limiting
+        config:
+          minute: 60
+          policy: local
+
+consumers:
+  - username: loaded-mobile-app
+    jwt_secrets:
+      - key: loaded-auth-service # must match SIMPLE_JWT["ISSUER"] / JWT_ISSUER env var
+        algorithm: RS256
+        rsa_public_key: |
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAn4EVALNn2T7mfCw8pHS6
+          vjI1tOj6vCvRqIs/D2Zo4pKZSkeFZ79sywVW1Z3Ewf1jupk5YzzaS8uP9W5+hG+b
+          86rhCZxdMFPGof3gHsx4OUen9Sz72U3hmOpCzIqL0L7KJW7PdaWN2YcVEt5P3d+f
+          Urpm5LbzYgqifSepp7/tvvl1/17/5Jp7B240G3yl9/bvymJZYfvUtlFGzkEwjErf
+          DkdIn5puU9pjgxjhOlQbwbL2xZFcTuDOYmiq/9J9FynlUO1seZoxW+tRpd7/brqr
+          JrrrAB5ZmK0/LlG1lK0m7XKPEdQ6i8VDJsDUidypuenUIURVCDPDGVfBG74Kfs2s
+          EwIDAQAB
+          -----END PUBLIC KEY-----
+
+plugins:
+  - name: cors
+    config:
+      origins: ["*"] # tightened to a real web origin would matter if there were a browser client; the mobile app isn't origin-restricted by CORS
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+      headers: ["Authorization", "Content-Type", "X-Request-Id"]
+      credentials: false

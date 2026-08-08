@@ -84,6 +84,32 @@ Other issues found and fixed along the way, in case any recur:
 - **`services/auth-service`'s venv was missing the `requests` package**, which `google-auth`'s token-verification transport needs at runtime but doesn't declare as a hard dependency — added `requests>=2.32` to `requirements.txt`.
 - **`google-services.json` (Android FCM client config) was never generated** — needed a matching Android app registered in the `workout-591c3` Firebase project. It's deliberately committed to git (not treated as a secret — see `.gitignore` comment) since EAS Build only bundles files git doesn't ignore, and its API key is meant to be public per Firebase's own docs.
 
-## 6. Test suite status
+## 7. Production deployment config (free-tier VPS target)
+
+Built and dry-ran locally on 2026-08-08, ahead of actually having a server (plan: Oracle Cloud or AWS free tier, APK shared directly rather than Play Store — see §8). New files:
+
+- `infra/docker-compose.prod.yml` — override applied on top of the base file: `docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production up -d`. Locks down which ports are public (only Caddy's 80/443 — Postgres, Redis, each Django service, and Kong's admin API are internal-only), adds `restart: unless-stopped` everywhere, switches every service to `DEBUG=False` with real secrets pulled from env vars instead of the hardcoded dev values.
+- `infra/.env.production.example` — template for the real `.env.production` (gitignored, lives only on the server). Documents exactly which `openssl` command to use for each secret.
+- `infra/prod-keys/` — separate production-only JWT RSA keypair, generated via `prod-keys/generate.sh`, never reuses `dev-keys`.
+- `gateway/kong.prod.yml` — production Kong config signed against the prod public key, `preserve_host: true` on every route (see bugs below).
+- `infra/Caddyfile` — Caddy reverse-proxies `$DOMAIN` → `gateway:8000`, handling automatic HTTPS (Let's Encrypt against a real domain, or its own local CA for testing against `localhost`).
+
+**Real bugs found during the dry run** (none of this had been exercised before either):
+- **Compose override `ports: []` does not clear the base file's ports** — Docker Compose merges list fields rather than replacing them by default, so the "lock down ports for production" override silently did nothing. Fix: the compose-spec `!reset` tag — `ports: !reset []`. Verified via `docker compose config` that the merged output actually has no `ports` key before trusting it.
+- **`openssl rand -base64` for the Postgres password can break `DATABASE_URL`** — base64 output can contain `/`, `+`, `=`, which are meaningful characters in a `postgres://user:PASSWORD@host/db` URL and aren't automatically escaped anywhere in the compose file. Crashed every service with `dj_database_url.ParseError`. Fix: generate with `openssl rand -hex 24` instead — hex is always URL-safe.
+- **Kong rewrites the `Host` header to the upstream's internal address by default** (e.g. `auth-service:8000`) instead of preserving what the client sent, which broke Django's `ALLOWED_HOSTS` check (`DisallowedHost`). Fix: `preserve_host: true` on every route in `kong.prod.yml`.
+- **Kong recomputes `X-Forwarded-Proto` from its own incoming connection** (plain HTTP from Caddy, since that hop is internal-only) rather than trusting the header Caddy already set correctly — so Django's `SECURE_SSL_REDIRECT` saw `http` and 301-looped every request. Fix: `KONG_TRUSTED_IPS: "0.0.0.0/0,::/0"` on the gateway service, since Kong is never directly internet-facing in this architecture (only Caddy is) so trusting the whole internal network is safe.
+- **`collectstatic` never ran anywhere** — `/admin/` and DRF's browsable API would have been served completely unstyled (missing CSS) under `DEBUG=False` + Whitenoise. Fix: added to the compose `command:` for all 4 web-serving services, run at container start (needs real env vars, so can't happen at Docker build time).
+- **Gunicorn logged `Control server error: Permission denied: '/home/appuser'`** on every worker boot — the Dockerfiles create `appuser` with `--no-create-home`, so `$HOME` defaults to a nonexistent, unwritable directory. Fix: `ENV HOME=/app` in all 4 Dockerfiles (added right after `USER appuser`; `/app` is already owned by `appuser`).
+
+**Known non-issue**: testing this against `https://localhost` on Windows hit two purely local quirks unrelated to the actual config — Docker Desktop's port-forwarder sometimes only binds IPv6 after a sleep/resume, and Caddy's local-CA cert generation flaked once and needed its volume wiped and recreated. Neither will occur on a real Linux VPS (no WSL2 port-forwarding layer involved); confirmed the underlying app/Kong/Caddy logic was already correct by testing container-to-container inside the Docker network directly, bypassing the host port-forwarding entirely.
+
+## 8. Deployment plan (in progress)
+
+Decided against the Play Store for now — distributing via a directly-shared APK (EAS `--profile preview`, no Metro dependency) instead. This means no developer account fee, no store listing/privacy-policy requirement, no publishing the OAuth consent screen. Tradeoff: with the consent screen left in "Testing" mode, Google Sign-In only works for accounts added as test users (up to 100) — anyone else needs email signup instead.
+
+Hosting: free-tier VPS, leaning Oracle Cloud (Always Free ARM instance, genuinely free forever vs. AWS's 12-months-then-billed free tier) — not yet provisioned. Once a server exists: install Docker, copy this repo over, fill in `.env.production` from the template, run the compose command from §6a, point `app/.env`'s API URLs at the new domain, one more EAS build.
+
+## 9. Test suite status
 
 38 backend tests passing across all 4 services as of the last full run (auth 3, workout 14, analytics 13, notification 8). Frontend: `npx tsc --noEmit` and `npx expo export --platform android` both clean as of the last check.

@@ -16,6 +16,7 @@ COPY . .
 
 RUN adduser --disabled-password --gecos "" --no-create-home appuser && chown -R appuser /app
 USER appuser
+ENV HOME=/app
 
 EXPOSE 8000
 
