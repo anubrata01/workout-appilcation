@@ -53,10 +53,12 @@ Moved off Expo Go on 2026-07-26 — Google Sign-In and push notifications both n
 
 ## 4. Docker + Kong gateway
 
-Verified end-to-end on 2026-08-01 — all 4 services, Postgres, Redis, and Kong's JWT/rate-limiting/CORS plugins confirmed working, including the cross-service Redis pub/sub pipeline (Workout → Analytics) inside Docker's network. Run with:
+Verified end-to-end on 2026-08-01 — all 4 services, Postgres, Redis, and Kong's JWT/rate-limiting/CORS plugins confirmed working, including the cross-service Redis pub/sub pipeline (Workout → Analytics) inside Docker's network.
+
+**As of 2026-08-23, Kong is opt-in only** (see §7a) — a plain `docker compose up` no longer starts it. To bring it up for local testing the way it's described in this section, add the profile explicitly:
 
 ```bash
-cd "D:/Workout Application 2.0/infra" && docker compose up -d
+cd "D:/Workout Application 2.0/infra" && docker compose --profile gateway up -d
 ```
 
 Uses **different host ports** than the native dev stack so both can run side by side without conflict: Postgres `5442`, Redis `6389`, auth/workout/analytics/notification `18001`–`18004`, Kong proxy `8080`, Kong admin `8091`. The native stack keeps `5432`/`6379`/`8001`–`8004`.
@@ -83,6 +85,19 @@ Other issues found and fixed along the way, in case any recur:
 - **A running VPN (ExpressVPN) silently broke LAN traffic** from phone to PC even with the firewall rule in place — its virtual adapter can persist after uninstall until a reboot. If backend connectivity breaks again with no other explanation, check `Get-NetAdapter` for unexpected VPN/tunnel adapters.
 - **`services/auth-service`'s venv was missing the `requests` package**, which `google-auth`'s token-verification transport needs at runtime but doesn't declare as a hard dependency — added `requests>=2.32` to `requirements.txt`.
 - **`google-services.json` (Android FCM client config) was never generated** — needed a matching Android app registered in the `workout-591c3` Firebase project. It's deliberately committed to git (not treated as a secret — see `.gitignore` comment) since EAS Build only bundles files git doesn't ignore, and its API key is meant to be public per Firebase's own docs.
+
+## 6. Production performance redesign (2026-08-23)
+
+The free-tier EC2 box (`t2.micro`/`t3.micro`, 954MB RAM) was struggling under the original design — heavy swap usage, and gunicorn workers getting killed by `WORKER TIMEOUT` roughly every 30s in a near-continuous cycle. Root cause: the Docker `HEALTHCHECK` spawns a brand-new Python interpreter every 30s just to make one request, which is expensive to fork under memory pressure — sometimes expensive enough to blow past gunicorn's 30s worker timeout, which kills the "stuck" worker, which does more forking, which worsens the pressure. Actual user traffic still mostly got through, but with real latency spikes when a request landed during one of these respawn windows.
+
+Two changes, both applied to `docker-compose.prod.yml` / the 4 Dockerfiles:
+
+- **Kong is no longer part of production.** It's largely redundant here — every service already independently enforces JWT auth (`DEFAULT_AUTHENTICATION_CLASSES`), rate-limiting (`ScopedRateThrottle`), and CORS (`django-cors-headers`), which was a deliberate defense-in-depth choice originally. On a resource-constrained box, paying for a full nginx+Lua runtime for redundant protection isn't worth it. Caddy now routes directly to each service by URL path (see `infra/Caddyfile`) instead of through Kong — one fewer heavy process, one fewer network hop per request. This also incidentally removes two bugs we'd worked around (Kong rewriting the Host header, Kong recomputing `X-Forwarded-Proto`) since Caddy talks to each Django service directly and doesn't have either problem.
+  - Kong is **not deleted** — it's now behind an opt-in Docker Compose profile (`gateway`) in the base `docker-compose.yml`, so it's never built or run by a plain `docker compose up` (dev or prod), but still available for local testing: `docker compose --profile gateway up -d` (see §4).
+- **Gunicorn switched from multiple sync workers to one `gthread` worker with 4 threads** (`--workers 1 --threads 4 --worker-class gthread --timeout 60`). The original fix for the OOM crash (cutting 3 workers down to 1) fixed memory but made each service handle only one request at a time. Threads share memory within a single process, so this restores real concurrency without paying the multi-process memory cost. Django is thread-safe under a threaded WSGI server out of the box — no application code changes needed.
+- Also widened the healthcheck (`--interval=90s`, was 30s, plus `--start-period=15s`) so it forks a fresh Python interpreter a third as often.
+
+Not yet re-verified against the live server as of this writing — apply via `git pull` on the server, then rebuild: `docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production up --build -d`. Watch `free -h` and `docker compose ... logs -f` afterward the same way as previous rebuilds in this doc.
 
 ## 7. Production deployment config (free-tier VPS target)
 

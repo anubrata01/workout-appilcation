@@ -5,16 +5,16 @@
 #   - Postgres, Redis, and each Django service lose their public port mapping.
 #     Only Caddy (80/443) is reachable from the internet; everything else
 #     talks over the private docker network by service name.
-#   - Kong's admin API is never published here at all (base file's 8081/8091
-#     mapping only exists for local debugging).
+#   - No Kong gateway here at all — Caddy routes directly to each service by
+#     path (see Caddyfile). Deliberate for this box's tight RAM budget; see
+#     the comment above the caddy service below for why this is safe.
 #   - Real secrets come from .env.production (gitignored — see
 #     .env.production.example for the required keys), not hardcoded dev
 #     values.
 #   - DEBUG=False everywhere, which activates each service's own
 #     ImproperlyConfigured guard rails if any required prod value is missing.
 #   - JWT keys come from infra/prod-keys (generate with prod-keys/generate.sh,
-#     never reuse infra/dev-keys), and Kong verifies against kong.prod.yml
-#     instead of kong.yml.
+#     never reuse infra/dev-keys).
 #   - Every service restarts automatically after a crash or VM reboot.
 
 services:
@@ -128,23 +128,15 @@ services:
       JWT_ISSUER: loaded-auth-service
       REDIS_URL: redis://redis:6379/0
 
-  gateway:
-    restart: unless-stopped
-    ports: !reset []
-    environment:
-      # Kong sits behind Caddy on the private docker network, not exposed
-      # directly — trust that hop's X-Forwarded-* headers (notably
-      # X-Forwarded-Proto) instead of recomputing them from Kong's own
-      # (plain-HTTP, internal-only) connection to Caddy. Without this, Django's
-      # SECURE_SSL_REDIRECT sees "http" and 301-redirects every request.
-      KONG_TRUSTED_IPS: "0.0.0.0/0,::/0"
-    volumes:
-      - ../gateway/kong.prod.yml:/kong/kong.yml:ro
-    depends_on:
-      - auth-service
-      - workout-service
-      - analytics-service
-      - notification-service
+  # Kong (gateway) is deliberately NOT run in production — on this box's tiny
+  # RAM budget, its overhead isn't worth paying for since it was mostly
+  # redundant anyway: JWT auth, rate-limiting, and CORS are already enforced
+  # independently by each Django service (see each service's
+  # DEFAULT_AUTHENTICATION_CLASSES / ScopedRateThrottle / django-cors-headers
+  # config). Caddy routes directly to each service by path instead — one
+  # fewer heavy process, one fewer network hop per request. Still defined and
+  # buildable for local dev (see the base docker-compose.yml + gateway/kong.yml)
+  # in case centralized gateway features are ever needed again.
 
   caddy:
     image: caddy:2-alpine
@@ -159,7 +151,10 @@ services:
     environment:
       DOMAIN: ${DOMAIN}
     depends_on:
-      - gateway
+      - auth-service
+      - workout-service
+      - analytics-service
+      - notification-service
 
 volumes:
   caddy-data:

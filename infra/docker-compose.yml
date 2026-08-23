@@ -154,6 +154,11 @@ services:
       redis: { condition: service_healthy }
 
   gateway:
+    # Opt-in only — not started by a plain `docker compose up`. Kept for local
+    # testing of the Kong-fronted setup (`docker compose --profile gateway up`);
+    # production never uses this profile, so this service is never even built
+    # or run there (see docker-compose.prod.yml for why).
+    profiles: ["gateway"]
     image: kong:3.7
     environment:
       KONG_DATABASE: "off"

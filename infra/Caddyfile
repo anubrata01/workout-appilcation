@@ -1,3 +1,14 @@
 {$DOMAIN} {
-	reverse_proxy gateway:8000
+	handle /api/v1/auth/* {
+		reverse_proxy auth-service:8000
+	}
+	handle /api/v1/workouts/* {
+		reverse_proxy workout-service:8000
+	}
+	handle /api/v1/analytics/* {
+		reverse_proxy analytics-service:8000
+	}
+	handle /api/v1/notifications/* {
+		reverse_proxy notification-service:8000
+	}
 }
