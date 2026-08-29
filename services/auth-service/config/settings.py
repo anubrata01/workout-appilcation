@@ -32,6 +32,10 @@ if not DEBUG:
     # directly, which would otherwise redirect-loop behind a proxy.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_SSL_REDIRECT = True
+    # The Docker HEALTHCHECK hits this container directly on its plain-HTTP
+    # port, bypassing Caddy — so it never has X-Forwarded-Proto and would
+    # otherwise get redirected to an https:// URL nothing on this port serves.
+    SECURE_REDIRECT_EXEMPT = [r"^healthz$"]
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
