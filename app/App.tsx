@@ -4,8 +4,9 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Provider } from "react-redux";
 import { View } from "react-native";
 import * as Notifications from "expo-notifications";
+import { PersistGate } from "redux-persist/integration/react";
 
-import { store } from "./src/store";
+import { persistor, store } from "./src/store";
 import { RootNavigator } from "./src/navigation/RootNavigator";
 import { useAppFonts } from "./src/theme/useAppFonts";
 import { colors } from "./src/theme/tokens";
@@ -30,10 +31,12 @@ export default function App() {
 
   return (
     <Provider store={store}>
-      <SafeAreaProvider>
-        <RootNavigator />
-        <StatusBar style="light" />
-      </SafeAreaProvider>
+      <PersistGate loading={<View style={{ flex: 1, backgroundColor: colors.bg }} />} persistor={persistor}>
+        <SafeAreaProvider>
+          <RootNavigator />
+          <StatusBar style="light" />
+        </SafeAreaProvider>
+      </PersistGate>
     </Provider>
   );
 }

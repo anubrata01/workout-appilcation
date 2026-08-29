@@ -1,5 +1,5 @@
 import { fetchBaseQuery } from "@reduxjs/toolkit/query/react";
-import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from "@reduxjs/toolkit/query";
+import type { BaseQueryApi, BaseQueryFn, FetchArgs, FetchBaseQueryError } from "@reduxjs/toolkit/query";
 
 import { AUTH_API_URL } from "../config";
 import { clearTokens, saveTokens } from "../lib/secureStorage";
@@ -10,6 +10,48 @@ import { loggedOut, tokensRefreshed } from "../store/authSlice";
 // this base query instance is for — every service verifies the same tokens
 // but only Auth Service issues them (schema doc 1).
 const refreshBaseQuery = fetchBaseQuery({ baseUrl: AUTH_API_URL });
+
+// Module-level (not per-instance) so every service's base query shares the
+// SAME in-flight refresh — refresh tokens are single-use server-side
+// (accounts/views.py RefreshView revokes on use), so if a screen fires
+// requests to multiple services at once and their access tokens expire
+// together, each one hitting /refresh independently would race: only the
+// first succeeds, every other call gets "revoked" back and logs the user
+// out from under a session that was actually still valid. Funneling all
+// concurrent 401s through this one promise means they wait for one refresh
+// and share its result instead of racing.
+let refreshPromise: Promise<{ access: string; refresh: string } | null> | null = null;
+
+async function refreshTokens(
+  api: BaseQueryApi,
+  extraOptions: object
+): Promise<{ access: string; refresh: string } | null> {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    const refreshToken = (api.getState() as RootState).auth.refreshToken;
+    if (!refreshToken) return null;
+
+    const refreshResult = await refreshBaseQuery(
+      { url: "/v1/auth/refresh", method: "POST", body: { refresh: refreshToken } },
+      api,
+      extraOptions
+    );
+
+    if (!refreshResult.data) return null;
+
+    const { access, refresh } = refreshResult.data as { access: string; refresh: string };
+    api.dispatch(tokensRefreshed({ access, refresh }));
+    await saveTokens(access, refresh);
+    return { access, refresh };
+  })();
+
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
+  }
+}
 
 /**
  * One of these per service base URL (see api/authApi.ts, api/workoutApi.ts).
@@ -33,26 +75,13 @@ export function createServiceBaseQuery(
     let result = await rawBaseQuery(args, api, extraOptions);
 
     if (result.error?.status === 401) {
-      const refreshToken = (api.getState() as RootState).auth.refreshToken;
+      const refreshed = await refreshTokens(api, extraOptions);
 
-      if (refreshToken) {
-        const refreshResult = await refreshBaseQuery(
-          { url: "/v1/auth/refresh", method: "POST", body: { refresh: refreshToken } },
-          api,
-          extraOptions
-        );
-
-        if (refreshResult.data) {
-          const { access, refresh } = refreshResult.data as { access: string; refresh: string };
-          api.dispatch(tokensRefreshed({ access, refresh }));
-          await saveTokens(access, refresh);
-          result = await rawBaseQuery(args, api, extraOptions);
-        } else {
-          api.dispatch(loggedOut());
-          await clearTokens();
-        }
+      if (refreshed) {
+        result = await rawBaseQuery(args, api, extraOptions);
       } else {
         api.dispatch(loggedOut());
+        await clearTokens();
       }
     }
 

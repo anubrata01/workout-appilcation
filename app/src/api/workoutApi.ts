@@ -1,7 +1,15 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
+import { REHYDRATE } from "redux-persist";
 
 import { WORKOUT_API_URL } from "../config";
 import { createServiceBaseQuery } from "./createServiceBaseQuery";
+
+// A logged day is immutable once written except through saveDay (which
+// already invalidates just that date's tag) — safe to keep it around long
+// after the screen that fetched it unmounts, so revisiting a recent date
+// reads from cache instead of refetching. Paired with the persisted store
+// config (store/index.ts), this also survives an app restart.
+const TWO_WEEKS_IN_SECONDS = 60 * 60 * 24 * 14;
 
 export interface SetEntryDTO {
   weight: number;
@@ -53,10 +61,19 @@ export const workoutApi = createApi({
   reducerPath: "workoutApi",
   baseQuery: createServiceBaseQuery(WORKOUT_API_URL),
   tagTypes: ["Day", "Library", "CustomTag"],
+  // Lets rehydrated cache from AsyncStorage (see store/index.ts) populate
+  // this slice's query cache on launch, instead of every query starting empty
+  // and refetching.
+  extractRehydrationInfo(action, { reducerPath }): any {
+    if (action.type === REHYDRATE) {
+      return (action as { payload?: Record<string, unknown> }).payload?.[reducerPath];
+    }
+  },
   endpoints: (builder) => ({
     getDay: builder.query<WorkoutDayDTO | null, string>({
       query: (date) => `/v1/workouts/days/${date}/`,
       providesTags: (_result, _error, date) => [{ type: "Day", id: date }],
+      keepUnusedDataFor: TWO_WEEKS_IN_SECONDS,
     }),
     saveDay: builder.mutation<WorkoutDayDTO, { date: string; body: { tag: string | null; exercises: unknown[] } }>({
       query: ({ date, body }) => ({ url: `/v1/workouts/days/${date}/`, method: "PUT", body }),
