@@ -125,11 +125,37 @@ Built and dry-ran locally on 2026-08-08, ahead of actually having a server (plan
 
 **Known non-issue**: testing this against `https://localhost` on Windows hit two purely local quirks unrelated to the actual config — Docker Desktop's port-forwarder sometimes only binds IPv6 after a sleep/resume, and Caddy's local-CA cert generation flaked once and needed its volume wiped and recreated. Neither will occur on a real Linux VPS (no WSL2 port-forwarding layer involved); confirmed the underlying app/Kong/Caddy logic was already correct by testing container-to-container inside the Docker network directly, bypassing the host port-forwarding entirely.
 
-## 8. Deployment plan (in progress)
+## 8. Deployment plan — superseded, see §10
 
-Decided against the Play Store for now — distributing via a directly-shared APK (EAS `--profile preview`, no Metro dependency) instead. This means no developer account fee, no store listing/privacy-policy requirement, no publishing the OAuth consent screen. Tradeoff: with the consent screen left in "Testing" mode, Google Sign-In only works for accounts added as test users (up to 100) — anyone else needs email signup instead.
+(Originally planned Oracle Cloud; actually deployed on **AWS EC2** instead — see §10 for the real history. Play Store decision still holds: distributing via a directly-shared APK, `--profile preview`, no Play Store account/listing. With the OAuth consent screen left in "Testing" mode, Google Sign-In only works for accounts added as test users (up to 100) — anyone else needs email signup instead.)
 
-Hosting: free-tier VPS, leaning Oracle Cloud (Always Free ARM instance, genuinely free forever vs. AWS's 12-months-then-billed free tier) — not yet provisioned. Once a server exists: install Docker, copy this repo over, fill in `.env.production` from the template, run the compose command from §6a, point `app/.env`'s API URLs at the new domain, one more EAS build.
+## 10. Live deployment history (AWS)
+
+**Current production server**: EC2 in `ap-south-1` (Mumbai) — chosen after discovering the original `us-east-1` (Virginia) deployment added ~250-300ms of pure network latency for users in India, on top of any server processing time. Moving to Mumbai cut that to ~10-40ms. **If the region is ever wrong again for your actual users, this latency check is how you'd catch it**: `curl -w "Connect: %{time_connect}s | TLS: %{time_appconnect}s\n" -o /dev/null -s https://<domain>/api/v1/auth/me` from a machine near your real users — a few hundred ms just to connect, before any app logic, means the region is wrong.
+
+Region moves aren't a live migration — EC2 instances, Elastic IPs, and key pairs are all region-locked. The process each time: launch a fresh instance in the new region (20GB disk from the start — see the disk-full saga in §7), migrate real data with `pg_dump`/`psql` restore (or skip if it's only test data), point `app/.env` **and** `app/eas.json`'s `preview.env` block at the new domain (both — `.env` alone isn't reliably picked up by EAS's cloud builds, which is what caused a "login not happening" bug once), rebuild the APK.
+
+**Database moved off EC2 to RDS** (2026-08-29) — a second, different resource crisis (not memory this time) forced this: `uptime` showed a load average of ~8 on a single-core box, but `top` showed 73% **I/O wait**, not CPU usage — the box was swap-thrashing against a slow disk, not out of CPU. Postgres was one of the heaviest processes competing for the same ~950MB alongside 4 Django services + Redis + Caddy. Moved it to a separate **RDS Postgres** instance (`db.t3.micro`/`t4g.micro`, free-tier eligible for 12 months) in the **same region** as the EC2 instance — moving it to a different region would have reintroduced the exact latency problem the Mumbai move fixed.
+
+What changed in the code: `infra/docker-compose.prod.yml`'s local `postgres` service is excluded via a profile it never activates (`profiles: ["local-db-unused-in-production"]`) — same technique as the Kong removal in §6, and for the same underlying reason (the base `docker-compose.yml` defines it unconditionally, so simply not overriding it would still pull it in). Every service's `depends_on` needed `!override` to drop the `postgres` dependency (compose merges `depends_on` by key rather than replacing it, so leaving it unoverridden would still wait on a service that no longer exists in the production config). `DATABASE_URL` for all 7 services now points at `${RDS_HOST}`/`${RDS_PASSWORD}` instead of the local `postgres` container, with `?sslmode=require` appended (RDS requires/expects TLS).
+
+To migrate existing data when doing this again elsewhere: `docker exec infra-postgres-1 pg_dump -U loaded -d <db_name> > <db_name>.sql` for each of the 4 databases, then `psql "host=<rds-endpoint> port=5432 dbname=<db_name> user=loaded sslmode=require" < <db_name>.sql` to restore into the already-created RDS databases (RDS only auto-creates one database on creation — the other 3 need `CREATE DATABASE` run manually via `psql` first).
+
+Redis and Caddy were deliberately **not** moved to managed equivalents (ElastiCache, ALB) — Redis is lightweight and wasn't a major resource consumer, Caddy even more so; ALB also carries a real ongoing cost (~$20+/month after any free-tier allowance) that isn't justified at this scale. RDS was the one move with a genuinely large resource payoff.
+
+## 11. CI/CD (2026-08-29)
+
+Pushing to `v1` now triggers `.github/workflows/deploy.yml`, which:
+1. Builds each of the 4 services' Docker images on **GitHub's own runners** — deliberately not on the EC2 box, since building directly on that tiny disk is what caused the repeated disk-full crises in §7.
+2. Pushes them to **GitHub Container Registry** (`ghcr.io/anubrata01/workout-appilcation/<service>:latest`).
+3. SSHes into the EC2 server and runs `git pull` (still needed for the compose files themselves, which are lightweight text — only the *image building* moved off the server) followed by `docker compose pull && docker compose up -d --remove-orphans` — no `--build` anymore, since the image is already built.
+
+The `-events` variant of each service (e.g. `workout-service-events`) reuses the **same** image as its web-serving counterpart, just with a different `command:` override — they're the same codebase, so no need to build/push them separately.
+
+**One-time setup required** (not yet done as of this writing):
+- Two GitHub Actions secrets need adding under **repo Settings → Secrets and variables → Actions**: `EC2_HOST` (the server's IP or domain) and `EC2_SSH_KEY` (the *contents* of the `.pem` private key file — paste directly into GitHub's secret form in the browser, never into a chat/AI conversation).
+- Repo **Settings → Actions → General → Workflow permissions** needs "Read and write permissions" enabled, or the workflow's `packages: write` push will be rejected.
+- After the first successful run, the pushed packages likely default to **private** visibility even though the repo itself is public (a GHCR quirk) — go to each package's page (linked from the repo's right sidebar under "Packages") and change visibility to **Public**, or the server's `docker compose pull` will fail without additional registry login.
 
 ## 9. Test suite status
 

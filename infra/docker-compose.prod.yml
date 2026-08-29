@@ -16,30 +16,41 @@
 #   - JWT keys come from infra/prod-keys (generate with prod-keys/generate.sh,
 #     never reuse infra/dev-keys).
 #   - Every service restarts automatically after a crash or VM reboot.
+#   - The database is a managed RDS Postgres instance (RDS_HOST/RDS_PASSWORD),
+#     not the local postgres container — that container is excluded here (see
+#     its profile below). Frees real RAM on this box and gets proper managed
+#     backups; RDS must be in the same region as this instance to avoid
+#     reintroducing cross-region latency.
 
 services:
+  # The local Postgres container is deliberately excluded from production —
+  # the database now lives on a separate managed RDS instance instead (see
+  # RDS_HOST/RDS_PASSWORD below), so it isn't competing with the app for this
+  # box's tight RAM anymore. This profile is never activated in production,
+  # which is what actually excludes it (the base file defines it
+  # unconditionally, so simply not overriding it here would still pull it in
+  # — same lesson as the Kong removal).
   postgres:
-    restart: unless-stopped
-    ports: !reset []
-    environment:
-      POSTGRES_USER: loaded
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: postgres
+    profiles: ["local-db-unused-in-production"]
 
   redis:
     restart: unless-stopped
     ports: !reset []
 
   auth-service:
+    image: ghcr.io/anubrata01/workout-appilcation/auth-service:latest
     restart: unless-stopped
     ports: !reset []
+    depends_on: !override
+      redis:
+        condition: service_healthy
     volumes:
       - ./prod-keys:/keys:ro
     environment:
       SECRET_KEY: ${AUTH_SECRET_KEY}
       DEBUG: "False"
       ALLOWED_HOSTS: ${DOMAIN},localhost
-      DATABASE_URL: postgres://loaded:${POSTGRES_PASSWORD}@postgres:5432/auth_db
+      DATABASE_URL: postgres://loaded:${RDS_PASSWORD}@${RDS_HOST}:5432/auth_db?sslmode=require
       CORS_ALLOWED_ORIGINS: https://${DOMAIN}
       JWT_PRIVATE_KEY_PATH: /keys/jwt-private.pem
       JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
@@ -49,64 +60,84 @@ services:
       EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
 
   workout-service:
+    image: ghcr.io/anubrata01/workout-appilcation/workout-service:latest
     restart: unless-stopped
     ports: !reset []
+    depends_on: !override
+      redis:
+        condition: service_healthy
     volumes:
       - ./prod-keys:/keys:ro
     environment:
       SECRET_KEY: ${WORKOUT_SECRET_KEY}
       DEBUG: "False"
       ALLOWED_HOSTS: ${DOMAIN},localhost
-      DATABASE_URL: postgres://loaded:${POSTGRES_PASSWORD}@postgres:5432/workout_db
+      DATABASE_URL: postgres://loaded:${RDS_PASSWORD}@${RDS_HOST}:5432/workout_db?sslmode=require
       CORS_ALLOWED_ORIGINS: https://${DOMAIN}
       JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
       JWT_ISSUER: loaded-auth-service
       REDIS_URL: redis://redis:6379/0
 
   workout-service-events:
+    image: ghcr.io/anubrata01/workout-appilcation/workout-service:latest
     restart: unless-stopped
+    depends_on: !override
+      redis:
+        condition: service_healthy
     volumes:
       - ./prod-keys:/keys:ro
     environment:
       SECRET_KEY: ${WORKOUT_SECRET_KEY}
       DEBUG: "False"
       ALLOWED_HOSTS: ${DOMAIN},localhost
-      DATABASE_URL: postgres://loaded:${POSTGRES_PASSWORD}@postgres:5432/workout_db
+      DATABASE_URL: postgres://loaded:${RDS_PASSWORD}@${RDS_HOST}:5432/workout_db?sslmode=require
       JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
       JWT_ISSUER: loaded-auth-service
       REDIS_URL: redis://redis:6379/0
 
   analytics-service:
+    image: ghcr.io/anubrata01/workout-appilcation/analytics-service:latest
     restart: unless-stopped
     ports: !reset []
+    depends_on: !override
+      redis:
+        condition: service_healthy
     volumes:
       - ./prod-keys:/keys:ro
     environment:
       SECRET_KEY: ${ANALYTICS_SECRET_KEY}
       DEBUG: "False"
       ALLOWED_HOSTS: ${DOMAIN},localhost
-      DATABASE_URL: postgres://loaded:${POSTGRES_PASSWORD}@postgres:5432/analytics_db
+      DATABASE_URL: postgres://loaded:${RDS_PASSWORD}@${RDS_HOST}:5432/analytics_db?sslmode=require
       CORS_ALLOWED_ORIGINS: https://${DOMAIN}
       JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
       JWT_ISSUER: loaded-auth-service
       REDIS_URL: redis://redis:6379/0
 
   analytics-service-events:
+    image: ghcr.io/anubrata01/workout-appilcation/analytics-service:latest
     restart: unless-stopped
+    depends_on: !override
+      redis:
+        condition: service_healthy
     volumes:
       - ./prod-keys:/keys:ro
     environment:
       SECRET_KEY: ${ANALYTICS_SECRET_KEY}
       DEBUG: "False"
       ALLOWED_HOSTS: ${DOMAIN},localhost
-      DATABASE_URL: postgres://loaded:${POSTGRES_PASSWORD}@postgres:5432/analytics_db
+      DATABASE_URL: postgres://loaded:${RDS_PASSWORD}@${RDS_HOST}:5432/analytics_db?sslmode=require
       JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
       JWT_ISSUER: loaded-auth-service
       REDIS_URL: redis://redis:6379/0
 
   notification-service:
+    image: ghcr.io/anubrata01/workout-appilcation/notification-service:latest
     restart: unless-stopped
     ports: !reset []
+    depends_on: !override
+      redis:
+        condition: service_healthy
     volumes:
       - ./prod-keys:/keys:ro
       - ../services/notification-service/firebase-service-account.json:/secrets/firebase-service-account.json:ro
@@ -114,7 +145,7 @@ services:
       SECRET_KEY: ${NOTIFICATION_SECRET_KEY}
       DEBUG: "False"
       ALLOWED_HOSTS: ${DOMAIN},localhost
-      DATABASE_URL: postgres://loaded:${POSTGRES_PASSWORD}@postgres:5432/notif_db
+      DATABASE_URL: postgres://loaded:${RDS_PASSWORD}@${RDS_HOST}:5432/notif_db?sslmode=require
       CORS_ALLOWED_ORIGINS: https://${DOMAIN}
       JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
       JWT_ISSUER: loaded-auth-service
@@ -122,14 +153,18 @@ services:
       FCM_SERVICE_ACCOUNT_JSON_PATH: /secrets/firebase-service-account.json
 
   notification-service-events:
+    image: ghcr.io/anubrata01/workout-appilcation/notification-service:latest
     restart: unless-stopped
+    depends_on: !override
+      redis:
+        condition: service_healthy
     volumes:
       - ./prod-keys:/keys:ro
     environment:
       SECRET_KEY: ${NOTIFICATION_SECRET_KEY}
       DEBUG: "False"
       ALLOWED_HOSTS: ${DOMAIN},localhost
-      DATABASE_URL: postgres://loaded:${POSTGRES_PASSWORD}@postgres:5432/notif_db
+      DATABASE_URL: postgres://loaded:${RDS_PASSWORD}@${RDS_HOST}:5432/notif_db?sslmode=require
       JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
       JWT_ISSUER: loaded-auth-service
       REDIS_URL: redis://redis:6379/0
