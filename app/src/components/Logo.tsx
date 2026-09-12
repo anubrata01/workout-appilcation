@@ -1,44 +1,28 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
-import { Dumbbell } from "lucide-react-native";
-
-import { colors, fonts, spacing } from "../theme/tokens";
+import { Image, StyleSheet } from "react-native";
 
 interface LogoProps {
   size?: "md" | "lg";
 }
 
-// Placeholder brand mark — an accent-filled circle + wordmark, same shape the
-// old "LOADED" brand had. Swap this component's internals for a real logo
-// image/animation once one exists; every other screen just renders <Logo />.
+// The real GetFit mark (assets/logo.png) — already includes the wordmark, so
+// nothing else needs to render alongside it. Square source asset (1254x1254)
+// with the artwork occupying roughly its top two-thirds; "contain" keeps it
+// undistorted regardless of the box size passed in.
 export function Logo({ size = "md" }: LogoProps) {
-  const markSize = size === "lg" ? 72 : 56;
-  const iconSize = size === "lg" ? 30 : 22;
-  const textSize = size === "lg" ? 54 : 42;
+  const boxSize = size === "lg" ? 220 : 160;
 
   return (
-    <View style={styles.container}>
-      <View style={[styles.mark, { width: markSize, height: markSize, borderRadius: markSize / 2.8 }]}>
-        <Dumbbell size={iconSize} color={colors.surface} strokeWidth={2.5} />
-      </View>
-      <Text style={[styles.text, { fontSize: textSize }]}>GetFit</Text>
-    </View>
+    <Image
+      source={require("../../assets/logo.png")}
+      resizeMode="contain"
+      style={[styles.image, { width: boxSize, height: boxSize }]}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    alignItems: "center",
-  },
-  mark: {
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: spacing.lg,
-  },
-  text: {
-    fontFamily: fonts.display,
-    letterSpacing: 2,
-    color: colors.chalk,
+  image: {
+    alignSelf: "center",
   },
 });
