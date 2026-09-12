@@ -11,4 +11,7 @@
 	handle /api/v1/notifications/* {
 		reverse_proxy notification-service:8000
 	}
+	handle /api/v1/nutrition/* {
+		reverse_proxy nutrition-service:8000
+	}
 }

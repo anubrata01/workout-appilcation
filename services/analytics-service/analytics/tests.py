@@ -167,3 +167,17 @@ class AnalyticsApiTests(APITestCase):
 
         prs = self.client.get("/api/v1/analytics/prs/", HTTP_AUTHORIZATION=f"Bearer {make_access_token(user_b)}")
         self.assertEqual(prs.data, [])
+
+    def test_exercise_progress_returns_full_history_oldest_first(self):
+        user_id = str(uuid.uuid4())
+        auth = f"Bearer {make_access_token(user_id)}"
+        recompute_for_day(user_id, "2026-07-20", {"exercises": [{"name": "Squat", "sets": [{"weight": 80, "reps": 5, "done": True}]}]})
+        recompute_for_day(user_id, "2026-07-22", {"exercises": [{"name": "Squat", "sets": [{"weight": 85, "reps": 5, "done": True}]}]})
+        recompute_for_day(user_id, "2026-07-25", {"exercises": [{"name": "Squat", "sets": [{"weight": 90, "reps": 4, "done": True}]}]})
+
+        resp = self.client.get("/api/v1/analytics/exercises/Squat/progress/", HTTP_AUTHORIZATION=auth)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.data), 3)
+        self.assertEqual([r["weight"] for r in resp.data], [80, 85, 90])  # oldest first — a real trend, not just current best
+        self.assertEqual(resp.data[0]["date"], "2026-07-20")
+        self.assertEqual(resp.data[-1]["date"], "2026-07-25")

@@ -1,10 +1,11 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
-import type { SetEntryDTO } from "../api/workoutApi";
+import type { ExerciseCategory, SetEntryDTO } from "../api/workoutApi";
 
 export interface LocalExercise {
   key: string;
   name: string;
+  category: ExerciseCategory;
   isBodyweight: boolean;
   sets: SetEntryDTO[];
 }
@@ -21,6 +22,10 @@ const initialState: ActiveSessionState = {
   exercises: [],
 };
 
+function blankSet(): SetEntryDTO {
+  return { weight: 0, reps: 0, duration_minutes: 0, distance_km: 0, rest_seconds: null, done: false };
+}
+
 const activeSessionSlice = createSlice({
   name: "activeSession",
   initialState,
@@ -33,12 +38,16 @@ const activeSessionSlice = createSlice({
     sessionCleared() {
       return initialState;
     },
-    exerciseAdded(state, action: PayloadAction<{ key: string; name: string; isBodyweight: boolean }>) {
+    exerciseAdded(
+      state,
+      action: PayloadAction<{ key: string; name: string; category: ExerciseCategory; isBodyweight: boolean }>
+    ) {
       state.exercises.push({
         key: action.payload.key,
         name: action.payload.name,
+        category: action.payload.category,
         isBodyweight: action.payload.isBodyweight,
-        sets: [{ weight: 0, reps: 0, done: false }],
+        sets: [blankSet()],
       });
     },
     exerciseRemoved(state, action: PayloadAction<{ key: string }>) {
@@ -48,11 +57,16 @@ const activeSessionSlice = createSlice({
       const exercise = state.exercises.find((e) => e.key === action.payload.key);
       if (!exercise) return;
       const last = exercise.sets[exercise.sets.length - 1];
-      exercise.sets.push({ weight: last?.weight ?? 0, reps: last?.reps ?? 0, done: false });
+      exercise.sets.push({ ...blankSet(), weight: last?.weight ?? 0, reps: last?.reps ?? 0 });
     },
     setUpdated(
       state,
-      action: PayloadAction<{ key: string; index: number; field: "weight" | "reps"; value: number }>
+      action: PayloadAction<{
+        key: string;
+        index: number;
+        field: "weight" | "reps" | "duration_minutes" | "distance_km" | "rest_seconds";
+        value: number;
+      }>
     ) {
       const exercise = state.exercises.find((e) => e.key === action.payload.key);
       if (!exercise) return;

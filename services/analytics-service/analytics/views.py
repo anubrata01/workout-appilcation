@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from .models import DailyVolumeSnapshot, PersonalRecord, StreakState
+from .models import DailyVolumeSnapshot, ExerciseDailyBest, PersonalRecord, StreakState
 
 
 class HealthView(APIView):
@@ -41,18 +41,24 @@ class PRListView(APIView):
 
 
 class ExerciseProgressView(APIView):
-    """GET /api/v1/analytics/exercises/<name>/progress/ — best weight over time for one exercise."""
+    """
+    GET /api/v1/analytics/exercises/<name>/progress/ — best weight/reps per
+    day for one exercise, oldest first. ExerciseDailyBest already holds
+    exactly this (schema doc 3 — it's what PersonalRecord's fallback logic
+    is recomputed from when a day's data is deleted), so no new table or
+    migration is needed here — this just reads it in order instead of only
+    ever looking at the single current-best row.
+    """
 
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "analytics-read"
 
     def get(self, request, name):
-        record = PersonalRecord.objects.filter(user_id=request.user.id, exercise_name=name).first()
-        if record is None:
-            return Response([])
-        # v2.0 keeps only the current best per exercise (schema doc 3) — a full
-        # weight-over-time series needs a history table, flagged as a v2.1 candidate.
-        return Response([{"date": str(record.best_date), "weight": record.best_weight, "reps": record.best_reps}])
+        rows = (
+            ExerciseDailyBest.objects.filter(user_id=request.user.id, exercise_name=name)
+            .order_by("date")[:100]  # a long enough history to chart without being unbounded
+        )
+        return Response([{"date": str(r.date), "weight": r.weight, "reps": r.reps} for r in rows])
 
 
 class ReportView(APIView):

@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import jwt
+from django.utils.dateparse import parse_datetime
 from rest_framework.test import APITestCase
 
 from .models import WorkoutDay
@@ -85,6 +86,35 @@ class WorkoutDayIsolationTests(APITestCase):
         )
         self.assertEqual(resp.status_code, 400)
         self.assertFalse(WorkoutDay.objects.filter(date=TOMORROW).exists())
+
+    def test_second_session_same_day_appends_and_accumulates_duration(self):
+        """The bug this fixes: a second Finish the same day used to silently
+        wipe the first session's exercises. Now both are kept, and their
+        durations sum — the gap between the two sessions is never counted,
+        since it was never part of either session's own elapsed timer."""
+        morning = {
+            "duration_seconds": 1800,
+            "started_at": "2026-09-13T07:00:00Z",
+            "finished_at": "2026-09-13T07:30:00Z",
+            "exercises": [{"name": "Squat", "sets": [{"weight": 80, "reps": 5, "done": True}]}],
+        }
+        evening = {
+            "duration_seconds": 2400,
+            "started_at": "2026-09-13T18:00:00Z",
+            "finished_at": "2026-09-13T18:40:00Z",
+            "exercises": [{"name": "Bench Press", "sets": [{"weight": 60, "reps": 8, "done": True}]}],
+        }
+        self.client.put(f"/api/v1/workouts/days/{TODAY}/", morning, format="json", HTTP_AUTHORIZATION=self.auth_a)
+        resp = self.client.put(f"/api/v1/workouts/days/{TODAY}/", evening, format="json", HTTP_AUTHORIZATION=self.auth_a)
+
+        self.assertEqual(resp.status_code, 200)
+        names = {ex["name"] for ex in resp.data["exercises"]}
+        self.assertEqual(names, {"Squat", "Bench Press"})  # both sessions kept, not overwritten
+        self.assertEqual(resp.data["duration_seconds"], 1800 + 2400)  # summed, gap between them excluded
+        # Compare as actual instants, not strings — DRF renders these in the
+        # server's local timezone (Asia/Kolkata), not passed-through UTC.
+        self.assertEqual(parse_datetime(resp.data["started_at"]), parse_datetime("2026-09-13T07:00:00Z"))
+        self.assertEqual(parse_datetime(resp.data["finished_at"]), parse_datetime("2026-09-13T18:40:00Z"))
 
 
 class ExerciseLibraryTests(APITestCase):

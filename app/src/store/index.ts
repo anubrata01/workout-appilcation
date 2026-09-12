@@ -5,6 +5,7 @@ import { FLUSH, PAUSE, PERSIST, PURGE, REGISTER, REHYDRATE, persistReducer, pers
 import { analyticsApi } from "../api/analyticsApi";
 import { baseApi } from "../api/baseApi";
 import { notificationApi } from "../api/notificationApi";
+import { nutritionApi } from "../api/nutritionApi";
 import { workoutApi } from "../api/workoutApi";
 import activeSessionReducer from "./activeSessionSlice";
 import authReducer from "./authSlice";
@@ -16,15 +17,29 @@ const persistedWorkoutApiReducer = persistReducer(
   { key: "workoutApi", storage: AsyncStorage, whitelist: ["queries"] },
   workoutApi.reducer
 );
+const persistedNutritionApiReducer = persistReducer(
+  { key: "nutritionApi", storage: AsyncStorage, whitelist: ["queries"] },
+  nutritionApi.reducer
+);
+// The whole slice, not just a whitelist — status/startedAt/exercises all
+// need to survive the app being killed mid-session, or the timer (and
+// everything logged so far) is just gone. startedAt is a plain timestamp,
+// not a ticking value, so rehydrating it and recomputing elapsed time from
+// Date.now() on the next launch just works with no extra logic needed.
+const persistedActiveSessionReducer = persistReducer(
+  { key: "activeSession", storage: AsyncStorage },
+  activeSessionReducer
+);
 
 export const store = configureStore({
   reducer: {
     auth: authReducer,
-    activeSession: activeSessionReducer,
+    activeSession: persistedActiveSessionReducer,
     [baseApi.reducerPath]: baseApi.reducer,
     [workoutApi.reducerPath]: persistedWorkoutApiReducer,
     [analyticsApi.reducerPath]: analyticsApi.reducer,
     [notificationApi.reducerPath]: notificationApi.reducer,
+    [nutritionApi.reducerPath]: persistedNutritionApiReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
@@ -34,7 +49,13 @@ export const store = configureStore({
       serializableCheck: {
         ignoredActions: [FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER],
       },
-    }).concat(baseApi.middleware, workoutApi.middleware, analyticsApi.middleware, notificationApi.middleware),
+    }).concat(
+      baseApi.middleware,
+      workoutApi.middleware,
+      analyticsApi.middleware,
+      notificationApi.middleware,
+      nutritionApi.middleware
+    ),
 });
 
 export const persistor = persistStore(store);

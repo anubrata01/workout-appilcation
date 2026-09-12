@@ -1,5 +1,15 @@
 import React, { useMemo, useState } from "react";
-import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { X } from "lucide-react-native";
 
 import { useGetPRsQuery } from "../../api/analyticsApi";
@@ -9,13 +19,22 @@ import {
   useGetExerciseLastSessionsQuery,
   useSearchLibraryQuery,
 } from "../../api/workoutApi";
+import type { ExerciseCategory, LastSessionDTO } from "../../api/workoutApi";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { parseLocalDate } from "../../lib/workoutHelpers";
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
 
 export interface PickedExercise {
   name: string;
+  category: ExerciseCategory;
   isBodyweight: boolean;
+}
+
+function formatLastSession(category: ExerciseCategory, lastSession: LastSessionDTO): string {
+  if (category === "cardio") {
+    return lastSession.sets.map((s) => `${s.duration_minutes}min · ${s.distance_km}km`).join(", ");
+  }
+  return lastSession.sets.map((s) => `${s.weight}kg×${s.reps}`).join(", ");
 }
 
 interface Props {
@@ -59,23 +78,29 @@ export function ExercisePicker({ visible, onPick, onClose }: Props) {
     const name = query.trim();
     if (!name) return;
     let isBodyweight = false;
+    let category: ExerciseCategory = "strength";
     try {
       const created = await addCustomExercise({ name }).unwrap();
       isBodyweight = created.is_bodyweight;
+      category = created.category;
     } catch {
       // If it already exists (e.g. re-adding your own custom entry), fall through and just use the name.
     }
-    onPick({ name, isBodyweight });
+    onPick({ name, category, isBodyweight });
     setQuery("");
   }
 
-  function handlePick(name: string, isBodyweight: boolean) {
-    onPick({ name, isBodyweight });
+  function handlePick(name: string, category: ExerciseCategory, isBodyweight: boolean) {
+    onPick({ name, category, isBodyweight });
     setQuery("");
   }
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
       <Pressable style={styles.overlay} onPress={onClose}>
         <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
           <View style={styles.header}>
@@ -109,15 +134,15 @@ export function ExercisePicker({ visible, onPick, onClose }: Props) {
               const pr = prByName.get(item.name);
               const lastSession = lastSessions[item.name];
               return (
-                <Pressable style={styles.item} onPress={() => handlePick(item.name, item.is_bodyweight)}>
+                <Pressable style={styles.item} onPress={() => handlePick(item.name, item.category, item.is_bodyweight)}>
                   <Text style={styles.itemText}>
                     {item.name}
+                    {item.category === "cardio" ? <Text style={styles.itemBodyweight}>  cardio</Text> : null}
                     {item.is_bodyweight ? <Text style={styles.itemBodyweight}>  bodyweight</Text> : null}
                   </Text>
                   {lastSession ? (
                     <Text style={styles.itemHistory}>
-                      Last {formatShortDate(lastSession.date)}:{" "}
-                      {lastSession.sets.map((s) => `${s.weight}×${s.reps}`).join(", ")} kg
+                      ({formatShortDate(lastSession.date)}: {formatLastSession(item.category, lastSession)})
                     </Text>
                   ) : null}
                   {pr ? (
@@ -131,6 +156,7 @@ export function ExercisePicker({ visible, onPick, onClose }: Props) {
           />
         </Pressable>
       </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

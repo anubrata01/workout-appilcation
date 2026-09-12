@@ -153,6 +153,24 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
 
+  nutrition-service:
+    build: ../services/nutrition-service
+    # FastAPI/SQLAlchemy, unlike the Django services here — no manage.py, so
+    # migrations run via alembic instead of `migrate --noinput`.
+    command: sh -c "alembic upgrade head && gunicorn app.main:app --bind 0.0.0.0:8000 --worker-class uvicorn.workers.UvicornWorker"
+    environment:
+      DEBUG: "True"
+      DATABASE_URL: postgres://loaded:loaded@postgres:5432/nutrition_db
+      CORS_ALLOWED_ORIGINS: ""
+      JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
+      JWT_ISSUER: loaded-auth-service
+    volumes:
+      - ./dev-keys:/keys:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    ports:
+      - "18005:8000" # 8005 is taken by the native nutrition-service used for local dev
+
   gateway:
     # Opt-in only — not started by a plain `docker compose up`. Kept for local
     # testing of the Kong-fronted setup (`docker compose --profile gateway up`);
@@ -175,6 +193,7 @@ services:
       - workout-service
       - analytics-service
       - notification-service
+      - nutrition-service
 
 volumes:
   postgres-data:

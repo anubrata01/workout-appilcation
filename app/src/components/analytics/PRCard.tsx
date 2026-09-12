@@ -1,15 +1,16 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { colorForExerciseName } from "../../lib/workoutHelpers";
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
 import { TrendBadge } from "./TrendBadge";
 import type { PersonalRecordDTO } from "../../api/analyticsApi";
 
-/** Same card layout as the prototype's PRsTab (app flow doc §2.10). */
-export function PRCard({ pr }: { pr: PersonalRecordDTO }) {
+/** Same card layout as the prototype's PRsTab (app flow doc §2.10) — tap
+ * through to see the exercise's full weight/rep history over time. */
+export function PRCard({ pr, onPress }: { pr: PersonalRecordDTO; onPress?: () => void }) {
   return (
-    <View style={styles.card}>
+    <Pressable style={styles.card} onPress={onPress}>
       <View style={[styles.dot, { backgroundColor: colorForExerciseName(pr.name) }]} />
       <View style={{ flex: 1 }}>
         <Text style={styles.name}>{pr.name}</Text>
@@ -21,7 +22,7 @@ export function PRCard({ pr }: { pr: PersonalRecordDTO }) {
         </Text>
         <TrendBadge trend={pr.trend} />
       </View>
-    </View>
+    </Pressable>
   );
 }
 

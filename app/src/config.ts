@@ -22,3 +22,6 @@ export const ANALYTICS_API_URL =
 
 export const NOTIFICATION_API_URL =
   process.env.EXPO_PUBLIC_NOTIFICATION_API_URL ?? `http://${DEFAULT_HOST}:8004/api`;
+
+export const NUTRITION_API_URL =
+  process.env.EXPO_PUBLIC_NUTRITION_API_URL ?? `http://${DEFAULT_HOST}:8005/api`;

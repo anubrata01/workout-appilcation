@@ -12,13 +12,20 @@ class WorkoutDay(models.Model):
     """One row per user per calendar date (schema doc 2). user_id is not a DB FK —
     Auth Service owns that table; ownership is enforced at the application layer.
 
-    `duration_seconds` is set once, when a session is finished — sessions are
-    no longer autosaved incrementally, so this is null until then."""
+    A day can hold more than one Finish (a morning session and an evening
+    session, say) — `duration_seconds` is the SUM of each session's own
+    elapsed time (never the gap between them, since neither session's timer
+    ever ran during that gap), `started_at` is the first session's start,
+    `finished_at` is the most recent session's finish. Each PUT to this day
+    now represents one session's worth of new data, appended, not the day's
+    complete state — see WorkoutDaySerializer.create."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user_id = models.UUIDField(db_index=True)
     date = models.DateField()
     duration_seconds = models.PositiveIntegerField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -64,6 +71,7 @@ class Exercise(models.Model):
         ExerciseLibraryItem, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
     name = models.CharField(max_length=120)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="strength")
     order = models.PositiveIntegerField(default=0)
 
     class Meta:
@@ -74,10 +82,19 @@ class Exercise(models.Model):
 
 
 class SetEntry(models.Model):
+    """One set within an exercise. For a strength exercise, weight/reps are
+    the meaningful fields; for cardio, duration_minutes/distance_km are —
+    the other pair just stays at its default, unused, rather than needing a
+    separate model per category (Exercise.category says which fields to
+    read). rest_seconds is the rest taken AFTER this set, before the next."""
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     exercise = models.ForeignKey(Exercise, related_name="sets", on_delete=models.CASCADE)
     weight = models.FloatField(default=0)
     reps = models.PositiveIntegerField(default=0)
+    duration_minutes = models.FloatField(default=0)
+    distance_km = models.FloatField(default=0)
+    rest_seconds = models.PositiveIntegerField(null=True, blank=True)
     done = models.BooleanField(default=False)
     order = models.PositiveIntegerField(default=0)
 

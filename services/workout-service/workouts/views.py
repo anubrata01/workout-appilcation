@@ -168,6 +168,16 @@ class ExerciseLastSessionsView(APIView):
             else:
                 results[name] = {
                     "date": str(exercise.day.date),
-                    "sets": [{"weight": s.weight, "reps": s.reps, "done": s.done} for s in exercise.sets.all()],
+                    "sets": [
+                        {
+                            "weight": s.weight,
+                            "reps": s.reps,
+                            "duration_minutes": s.duration_minutes,
+                            "distance_km": s.distance_km,
+                            "rest_seconds": s.rest_seconds,
+                            "done": s.done,
+                        }
+                        for s in exercise.sets.all()
+                    ],
                 }
         return Response(results)

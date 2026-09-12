@@ -31,10 +31,16 @@ export interface StreakDTO {
   lastLoggedDate: string | null;
 }
 
+export interface ExerciseProgressPointDTO {
+  date: string;
+  weight: number;
+  reps: number;
+}
+
 export const analyticsApi = createApi({
   reducerPath: "analyticsApi",
   baseQuery: createServiceBaseQuery(ANALYTICS_API_URL),
-  tagTypes: ["Report", "PRs", "Streak"],
+  tagTypes: ["Report", "PRs", "Streak", "Progress"],
   endpoints: (builder) => ({
     getReport: builder.query<ReportDTO, "week" | "month">({
       query: (range) => `/v1/analytics/reports/?range=${range}`,
@@ -48,7 +54,13 @@ export const analyticsApi = createApi({
       query: () => "/v1/analytics/streak/",
       providesTags: ["Streak"],
     }),
+    // Oldest-first weight/rep history for one exercise — how weight and reps
+    // have actually moved over time, replacing the old volume-by-day chart.
+    getExerciseProgress: builder.query<ExerciseProgressPointDTO[], string>({
+      query: (name) => `/v1/analytics/exercises/${encodeURIComponent(name)}/progress/`,
+      providesTags: (_result, _error, name) => [{ type: "Progress", id: name }],
+    }),
   }),
 });
 
-export const { useGetReportQuery, useGetPRsQuery, useGetStreakQuery } = analyticsApi;
+export const { useGetReportQuery, useGetPRsQuery, useGetStreakQuery, useGetExerciseProgressQuery } = analyticsApi;

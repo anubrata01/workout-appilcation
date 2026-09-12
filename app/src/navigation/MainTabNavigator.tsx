@@ -1,8 +1,9 @@
 import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { BarChart3, Dumbbell, Settings as SettingsIcon, Trophy } from "lucide-react-native";
+import { BarChart3, Dumbbell, Settings as SettingsIcon, Trophy, Utensils } from "lucide-react-native";
 
 import { SessionScreen } from "../screens/main/SessionScreen";
+import { NutritionScreen } from "../screens/main/NutritionScreen";
 import { ReportsScreen } from "../screens/main/ReportsScreen";
 import { PRsScreen } from "../screens/main/PRsScreen";
 import { SettingsScreen } from "../screens/main/SettingsScreen";
@@ -22,6 +23,8 @@ export function MainTabNavigator() {
         tabBarActiveTintColor: colors.chalk,
         tabBarInactiveTintColor: colors.dim,
         tabBarLabelStyle: { fontFamily: fonts.bodySemiBold, fontSize: 10.5 },
+        // Cross-fade + slight shift between tabs instead of an instant swap.
+        animation: "shift",
       }}
     >
       <Tab.Screen
@@ -29,6 +32,13 @@ export function MainTabNavigator() {
         component={SessionScreen}
         options={{
           tabBarIcon: ({ color, focused }) => <Dumbbell size={18} color={focused ? colors.accent : color} />,
+        }}
+      />
+      <Tab.Screen
+        name="Nutrition"
+        component={NutritionScreen}
+        options={{
+          tabBarIcon: ({ color, focused }) => <Utensils size={18} color={focused ? colors.accent : color} />,
         }}
       />
       <Tab.Screen

@@ -3,14 +3,17 @@ import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleShee
 import { ChevronDown, Dumbbell, Plus } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { DayRecordCard } from "../../components/workout/DayRecordCard";
 import { ExerciseCard } from "../../components/workout/ExerciseCard";
 import { ExercisePicker } from "../../components/workout/ExercisePicker";
 import type { PickedExercise } from "../../components/workout/ExercisePicker";
 import { PrimaryButton } from "../../components/PrimaryButton";
+import { RestTimer } from "../../components/workout/RestTimer";
 import { ScreenBackground } from "../../components/ScreenBackground";
 import { SessionStatRow } from "../../components/workout/SessionStatRow";
-import { useGetExerciseLastSessionsQuery, useSaveDayMutation } from "../../api/workoutApi";
-import { estimateCalories, keyFor } from "../../lib/workoutHelpers";
+import { SessionSummaryModal } from "../../components/workout/SessionSummaryModal";
+import { useGetDayQuery, useGetExerciseLastSessionsQuery, useSaveDayMutation } from "../../api/workoutApi";
+import { dayOffset, estimateCalories, estimateCardioCalories, keyFor } from "../../lib/workoutHelpers";
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import {
   exerciseAdded,
@@ -36,6 +39,12 @@ function nextLocalKey() {
   return `local-${Date.now()}-${localKeyCounter}`;
 }
 
+interface RestTarget {
+  exerciseKey: string;
+  setIndex: number;
+  label: string;
+}
+
 /** The core loop, rebuilt around a timed start/finish session instead of
  * editing an arbitrary calendar date (app flow doc §2.6, redesigned). */
 export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
@@ -44,6 +53,21 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
   const [saveDay] = useSaveDayMutation();
   const [picking, setPicking] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [restTarget, setRestTarget] = useState<RestTarget | null>(null);
+  const [finishedSummary, setFinishedSummary] = useState<{
+    duration: string;
+    sets: number;
+    reps: number;
+    calories: number;
+    exerciseCount: number;
+  } | null>(null);
+
+  const todayKey = keyFor(new Date());
+  const yesterdayKey = keyFor(dayOffset(-1));
+  const { data: todayDay, isLoading: todayLoading } = useGetDayQuery(todayKey, { skip: status === "active" });
+  const { data: yesterdayDay, isLoading: yesterdayLoading } = useGetDayQuery(yesterdayKey, {
+    skip: status === "active",
+  });
 
   useEffect(() => {
     if (status !== "active" || !startedAt) return;
@@ -59,16 +83,47 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
   });
 
   const totalSets = exercises.reduce((sum, e) => sum + e.sets.length, 0);
-  const totalReps = exercises.reduce((sum, e) => sum + e.sets.reduce((s, set) => s + (set.done ? set.reps : 0), 0), 0);
-  const totalVolume = exercises.reduce(
-    (sum, e) => sum + e.sets.reduce((s, set) => s + (set.done ? set.weight * set.reps : 0), 0),
+  const totalReps = exercises.reduce(
+    (sum, e) => (e.category === "cardio" ? sum : sum + e.sets.reduce((s, set) => s + (set.done ? set.reps : 0), 0)),
     0
   );
-  const calories = estimateCalories(totalVolume);
+  const totalVolume = exercises.reduce(
+    (sum, e) =>
+      e.category === "cardio" ? sum : sum + e.sets.reduce((s, set) => s + (set.done ? set.weight * set.reps : 0), 0),
+    0
+  );
+  const totalCardioMinutes = exercises.reduce(
+    (sum, e) =>
+      e.category !== "cardio" ? sum : sum + e.sets.reduce((s, set) => s + (set.done ? set.duration_minutes : 0), 0),
+    0
+  );
+  const calories = estimateCalories(totalVolume) + estimateCardioCalories(totalCardioMinutes);
 
-  function handlePick({ name, isBodyweight }: PickedExercise) {
-    dispatch(exerciseAdded({ key: nextLocalKey(), name, isBodyweight }));
+  function handlePick({ name, category, isBodyweight }: PickedExercise) {
+    dispatch(exerciseAdded({ key: nextLocalKey(), name, category, isBodyweight }));
     setPicking(false);
+  }
+
+  function handleToggleDone(exerciseKey: string, index: number) {
+    const exercise = exercises.find((e) => e.key === exerciseKey);
+    const set = exercise?.sets[index];
+    const willBeDone = set ? !set.done : false;
+    dispatch(setDoneToggled({ key: exerciseKey, index }));
+    // Marking a set done is, in the normal flow, "I just finished this set
+    // right now" — auto-starting the rest timer here matches that moment
+    // instead of making rest tracking a separate manual step.
+    if (willBeDone && exercise) {
+      setRestTarget({ exerciseKey, setIndex: index, label: `${exercise.name} · Set ${index + 1}` });
+    }
+  }
+
+  function handleRestStop(elapsed: number) {
+    if (restTarget) {
+      dispatch(
+        setUpdated({ key: restTarget.exerciseKey, index: restTarget.setIndex, field: "rest_seconds", value: elapsed })
+      );
+    }
+    setRestTarget(null);
   }
 
   async function handleFinish() {
@@ -81,9 +136,18 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
         date: keyFor(new Date()),
         body: {
           duration_seconds: elapsedSeconds,
-          exercises: exercises.map((e) => ({ name: e.name, sets: e.sets })),
+          started_at: startedAt ? new Date(startedAt).toISOString() : null,
+          finished_at: new Date().toISOString(),
+          exercises: exercises.map((e) => ({ name: e.name, category: e.category, sets: e.sets })),
         },
       }).unwrap();
+      setFinishedSummary({
+        duration: formatDuration(elapsedSeconds),
+        sets: totalSets,
+        reps: totalReps,
+        calories,
+        exerciseCount: exercises.length,
+      });
       dispatch(sessionCleared());
     } catch {
       Alert.alert("Couldn't save", "Something went wrong saving your session — please try again.");
@@ -101,17 +165,34 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
     return (
       <ScreenBackground>
         <SafeAreaView style={styles.screen} edges={["top"]}>
-          <View style={styles.idleCenter}>
-            <Dumbbell size={40} color={colors.faint} />
-            <Text style={styles.idleTitle}>Ready to train?</Text>
-            <Text style={styles.idleSub}>Start a session to begin logging sets with a live timer.</Text>
-            <View style={{ width: "100%", marginTop: spacing.xl }}>
-              <PrimaryButton label="Start Workout" onPress={() => dispatch(sessionStarted())} />
+          <ScrollView contentContainerStyle={styles.idleContent}>
+            <View style={styles.idleCenter}>
+              <Dumbbell size={40} color={colors.faint} />
+              <Text style={styles.idleTitle}>Ready to train?</Text>
+              <Text style={styles.idleSub}>Start a session to begin logging sets with a live timer.</Text>
+              <View style={{ width: "100%", marginTop: spacing.xl }}>
+                <PrimaryButton label="Start Workout" onPress={() => dispatch(sessionStarted())} />
+              </View>
+              <Text style={styles.historyLink} onPress={() => navigation.navigate("History")}>
+                View past workouts
+              </Text>
             </View>
-            <Text style={styles.historyLink} onPress={() => navigation.navigate("History")}>
-              View past workouts
-            </Text>
-          </View>
+
+            <View style={styles.recordRow}>
+              <DayRecordCard label="Today" day={todayDay} isLoading={todayLoading} />
+              <DayRecordCard label="Yesterday" day={yesterdayDay} isLoading={yesterdayLoading} />
+            </View>
+          </ScrollView>
+
+          <SessionSummaryModal
+            visible={!!finishedSummary}
+            duration={finishedSummary?.duration ?? "00:00"}
+            sets={finishedSummary?.sets ?? 0}
+            reps={finishedSummary?.reps ?? 0}
+            calories={finishedSummary?.calories ?? 0}
+            exerciseCount={finishedSummary?.exerciseCount ?? 0}
+            onClose={() => setFinishedSummary(null)}
+          />
         </SafeAreaView>
       </ScreenBackground>
     );
@@ -142,6 +223,13 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
               calories={calories}
             />
 
+            <RestTimer
+              active={!!restTarget}
+              targetLabel={restTarget?.label}
+              onStop={handleRestStop}
+              onDismiss={() => setRestTarget(null)}
+            />
+
             {exercises.length === 0 ? (
               <View style={styles.emptyState}>
                 <Dumbbell size={22} color={colors.faint} />
@@ -152,13 +240,14 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
                 <ExerciseCard
                   key={ex.key}
                   name={ex.name}
+                  category={ex.category}
                   sets={ex.sets}
                   isBodyweight={ex.isBodyweight}
                   lastSession={lastSessions[ex.name]}
                   onRemove={() => dispatch(exerciseRemoved({ key: ex.key }))}
                   onAddSet={() => dispatch(setAdded({ key: ex.key }))}
                   onUpdateSet={(idx, field, value) => dispatch(setUpdated({ key: ex.key, index: idx, field, value }))}
-                  onToggleDone={(idx) => dispatch(setDoneToggled({ key: ex.key, index: idx }))}
+                  onToggleDone={(idx) => handleToggleDone(ex.key, idx)}
                 />
               ))
             )}
@@ -228,11 +317,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemiBold,
     fontSize: 13,
   },
-  idleCenter: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
+  idleContent: {
+    flexGrow: 1,
     padding: spacing.xxl,
+    justifyContent: "center",
+  },
+  idleCenter: {
+    alignItems: "center",
   },
   idleTitle: {
     fontFamily: fonts.display,
@@ -253,5 +344,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.accentWarm,
     marginTop: spacing.xl,
+  },
+  recordRow: {
+    flexDirection: "row",
+    gap: spacing.sm + 2,
+    marginTop: spacing.xxl,
   },
 });

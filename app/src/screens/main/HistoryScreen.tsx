@@ -5,7 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useGetDayQuery } from "../../api/workoutApi";
 import { ScreenBackground } from "../../components/ScreenBackground";
-import { dayOffset, dayVolume, estimateCalories, formatDateHeader, keyFor } from "../../lib/workoutHelpers";
+import { dayCalories, dayOffset, formatDateHeader, keyFor } from "../../lib/workoutHelpers";
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
 import type { MainStackScreenProps } from "../../navigation/types";
 
@@ -20,8 +20,8 @@ export function HistoryScreen({ navigation }: MainStackScreenProps<"History">) {
   const canGoForward = cursor < 0;
 
   const { data, isLoading } = useGetDayQuery(dateKey);
-  const volume = dayVolume(data ?? undefined);
-  const calories = estimateCalories(volume);
+  const totalSets = (data?.exercises ?? []).reduce((sum, ex) => sum + ex.sets.length, 0);
+  const calories = dayCalories(data ?? undefined);
 
   return (
     <ScreenBackground>
@@ -60,15 +60,22 @@ export function HistoryScreen({ navigation }: MainStackScreenProps<"History">) {
             <>
               <View style={styles.summaryRow}>
                 <SummaryStat label="Duration" value={data.duration_seconds != null ? `${Math.round(data.duration_seconds / 60)}m` : "—"} />
-                <SummaryStat label="Volume" value={`${volume.toLocaleString()} kg`} />
+                <SummaryStat label="Sets" value={String(totalSets)} />
                 <SummaryStat label="Calories" value={String(calories)} />
               </View>
               {data.exercises.map((ex) => (
                 <View key={ex.id} style={styles.exerciseCard}>
-                  <Text style={styles.exerciseName}>{ex.name}</Text>
+                  <Text style={styles.exerciseName}>
+                    {ex.name}
+                    {ex.category === "cardio" ? <Text style={styles.exerciseTag}>  cardio</Text> : null}
+                  </Text>
                   {ex.sets.map((s, i) => (
                     <Text key={i} style={styles.setLine}>
-                      Set {i + 1} — {s.weight}kg × {s.reps} {s.done ? "✓" : ""}
+                      Set {i + 1} —{" "}
+                      {ex.category === "cardio"
+                        ? `${s.duration_minutes}min · ${s.distance_km}km`
+                        : `${s.weight}kg × ${s.reps}`}{" "}
+                      {s.done ? "✓" : ""}
                     </Text>
                   ))}
                 </View>
@@ -153,5 +160,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   exerciseName: { fontFamily: fonts.bodyBold, fontSize: 14.5, color: colors.chalk, marginBottom: spacing.xs },
+  exerciseTag: { fontFamily: fonts.data, fontSize: 9.5, color: colors.dim, textTransform: "uppercase" },
   setLine: { fontFamily: fonts.data, fontSize: 12, color: colors.muted, marginTop: 2 },
 });

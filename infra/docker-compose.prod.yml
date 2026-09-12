@@ -169,6 +169,24 @@ services:
       JWT_ISSUER: loaded-auth-service
       REDIS_URL: redis://redis:6379/0
 
+  nutrition-service:
+    image: ghcr.io/anubrata01/workout-appilcation/nutrition-service:latest
+    restart: unless-stopped
+    ports: !reset []
+    # No redis dependency (unlike the Django services above) — this service
+    # doesn't publish/consume events, and postgres is excluded in prod the
+    # same way as everywhere else (RDS instead), so there's nothing left to
+    # wait on here.
+    depends_on: !override {}
+    volumes:
+      - ./prod-keys:/keys:ro
+    environment:
+      DEBUG: "False"
+      DATABASE_URL: postgres://loaded:${RDS_PASSWORD}@${RDS_HOST}:5432/nutrition_db?sslmode=require
+      CORS_ALLOWED_ORIGINS: https://${DOMAIN}
+      JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
+      JWT_ISSUER: loaded-auth-service
+
   # Kong (gateway) is deliberately NOT run in production — on this box's tiny
   # RAM budget, its overhead isn't worth paying for since it was mostly
   # redundant anyway: JWT auth, rate-limiting, and CORS are already enforced
@@ -196,6 +214,7 @@ services:
       - workout-service
       - analytics-service
       - notification-service
+      - nutrition-service
 
 volumes:
   caddy-data:

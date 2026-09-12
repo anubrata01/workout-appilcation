@@ -21,6 +21,7 @@
         "EXPO_PUBLIC_WORKOUT_API_URL": "https://15-252-154-226.sslip.io/api",
         "EXPO_PUBLIC_ANALYTICS_API_URL": "https://15-252-154-226.sslip.io/api",
         "EXPO_PUBLIC_NOTIFICATION_API_URL": "https://15-252-154-226.sslip.io/api",
+        "EXPO_PUBLIC_NUTRITION_API_URL": "https://15-252-154-226.sslip.io/api",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "329080043230-1nigfbim10230vb21vjovi0rnqd44r9s.apps.googleusercontent.com"
       }
     },

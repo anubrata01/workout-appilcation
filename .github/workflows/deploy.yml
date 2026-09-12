@@ -23,7 +23,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        service: [auth-service, workout-service, analytics-service, notification-service]
+        service: [auth-service, workout-service, analytics-service, notification-service, nutrition-service]
     steps:
       - uses: actions/checkout@v4
 

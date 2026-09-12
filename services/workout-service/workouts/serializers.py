@@ -6,7 +6,7 @@ from .models import Exercise, ExerciseLibraryItem, SetEntry, TemplateExerciseIte
 class SetEntrySerializer(serializers.ModelSerializer):
     class Meta:
         model = SetEntry
-        fields = ["weight", "reps", "done"]
+        fields = ["weight", "reps", "duration_minutes", "distance_km", "rest_seconds", "done"]
 
 
 class ExerciseSerializer(serializers.ModelSerializer):
@@ -15,7 +15,7 @@ class ExerciseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Exercise
-        fields = ["id", "name", "sets"]
+        fields = ["id", "name", "category", "sets"]
 
     def get_id(self, obj):
         return f"ex-{obj.id}"
@@ -24,30 +24,55 @@ class ExerciseSerializer(serializers.ModelSerializer):
 class WorkoutDaySerializer(serializers.ModelSerializer):
     date = serializers.DateField()
     duration_seconds = serializers.IntegerField(required=False, allow_null=True)
+    started_at = serializers.DateTimeField(required=False, allow_null=True)
+    finished_at = serializers.DateTimeField(required=False, allow_null=True)
     exercises = ExerciseSerializer(many=True)
 
     class Meta:
         model = WorkoutDay
-        fields = ["date", "duration_seconds", "exercises"]
+        fields = ["date", "duration_seconds", "started_at", "finished_at", "exercises"]
 
     def create(self, validated_data):
         """
-        The client PUTs the whole finished session in one call (app flow doc
-        2.6 — no more incremental autosave). Upsert the day scoped to user_id
-        (passed in via context, never trusted from the payload), then wipe
-        and rewrite its exercises/sets from what was sent.
+        Each PUT represents one FINISHED SESSION's worth of new data (app
+        flow doc 2.6), not the day's complete state. A second session the
+        same day appends its exercises to what's already logged and adds its
+        own elapsed time to the day's running total, instead of overwriting
+        the first session — that was a real bug: two workouts in one day
+        used to silently erase the first one's log. The gap between two
+        sessions is never counted, since neither session's own timer ran
+        during it — summing each session's own elapsed time already excludes
+        it, with no extra bookkeeping needed.
         """
         user_id = self.context["user_id"]
         exercises_data = validated_data.pop("exercises", [])
-        day, _ = WorkoutDay.objects.update_or_create(
-            user_id=user_id,
-            date=validated_data["date"],
-            defaults={"duration_seconds": validated_data.get("duration_seconds")},
-        )
-        day.exercises.all().delete()
+        incoming_duration = validated_data.get("duration_seconds") or 0
+        incoming_started = validated_data.get("started_at")
+        incoming_finished = validated_data.get("finished_at")
+
+        day = WorkoutDay.objects.filter(user_id=user_id, date=validated_data["date"]).first()
+        if day is None:
+            day = WorkoutDay.objects.create(
+                user_id=user_id,
+                date=validated_data["date"],
+                duration_seconds=incoming_duration,
+                started_at=incoming_started,
+                finished_at=incoming_finished,
+            )
+            next_order = 0
+        else:
+            day.duration_seconds = (day.duration_seconds or 0) + incoming_duration
+            if day.started_at is None:
+                day.started_at = incoming_started
+            day.finished_at = incoming_finished
+            day.save(update_fields=["duration_seconds", "started_at", "finished_at"])
+            next_order = day.exercises.count()
+
         for i, ex in enumerate(exercises_data):
             sets_data = ex.pop("sets", [])
-            exercise = Exercise.objects.create(day=day, name=ex["name"], order=i)
+            exercise = Exercise.objects.create(
+                day=day, name=ex["name"], category=ex.get("category", "strength"), order=next_order + i
+            )
             for j, s in enumerate(sets_data):
                 SetEntry.objects.create(exercise=exercise, order=j, **s)
         return day

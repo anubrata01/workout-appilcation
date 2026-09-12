@@ -1,10 +1,11 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import { FlatList, StyleSheet, Text, View } from "react-native";
 import { Trophy } from "lucide-react-native";
 import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useGetPRsQuery } from "../../api/analyticsApi";
+import { ExerciseProgressModal } from "../../components/analytics/ExerciseProgressModal";
 import { PRCard } from "../../components/analytics/PRCard";
 import { ScreenBackground } from "../../components/ScreenBackground";
 import { PRsScreenSkeleton } from "../../components/Skeleton";
@@ -13,6 +14,7 @@ import { colors, fonts, spacing } from "../../theme/tokens";
 /** App flow doc §2.10 — personal records feed, backed by Analytics Service. */
 export function PRsScreen() {
   const isFocused = useIsFocused();
+  const [progressFor, setProgressFor] = useState<string | null>(null);
   const { data, isLoading, error, refetch } = useGetPRsQuery(undefined, {
     pollingInterval: isFocused ? 4000 : 0,
   });
@@ -43,10 +45,12 @@ export function PRsScreen() {
           <FlatList
             data={data}
             keyExtractor={(item) => item.name}
-            renderItem={({ item }) => <PRCard pr={item} />}
+            renderItem={({ item }) => <PRCard pr={item} onPress={() => setProgressFor(item.name)} />}
             contentContainerStyle={{ paddingBottom: spacing.xxl }}
           />
         )}
+
+        <ExerciseProgressModal exerciseName={progressFor} onClose={() => setProgressFor(null)} />
       </SafeAreaView>
     </ScreenBackground>
   );

@@ -13,18 +13,29 @@ const TWO_WEEKS_IN_SECONDS = 60 * 60 * 24 * 14;
 export interface SetEntryDTO {
   weight: number;
   reps: number;
+  // Cardio-only — a strength set leaves these at 0, unused; a cardio set
+  // leaves weight/reps at 0, unused instead. Exercise.category says which
+  // pair actually applies (see ExerciseCard's category-based rendering).
+  duration_minutes: number;
+  distance_km: number;
+  // Rest taken AFTER this set, before the next — set via the rest timer,
+  // not typed in directly.
+  rest_seconds: number | null;
   done: boolean;
 }
 
 export interface ExerciseDTO {
   id: string;
   name: string;
+  category: ExerciseCategory;
   sets: SetEntryDTO[];
 }
 
 export interface WorkoutDayDTO {
   date: string;
   duration_seconds: number | null;
+  started_at: string | null;
+  finished_at: string | null;
   exercises: ExerciseDTO[];
 }
 
@@ -67,7 +78,15 @@ export const workoutApi = createApi({
     }),
     saveDay: builder.mutation<
       WorkoutDayDTO,
-      { date: string; body: { duration_seconds: number | null; exercises: unknown[] } }
+      {
+        date: string;
+        body: {
+          duration_seconds: number | null;
+          started_at: string | null;
+          finished_at: string | null;
+          exercises: unknown[];
+        };
+      }
     >({
       query: ({ date, body }) => ({ url: `/v1/workouts/days/${date}/`, method: "PUT", body }),
       invalidatesTags: (_result, _error, { date }) => [{ type: "Day", id: date }],

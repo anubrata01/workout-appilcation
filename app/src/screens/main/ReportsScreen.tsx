@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { Dumbbell, Flame, Layers, Trophy } from "lucide-react-native";
+import { Dumbbell, Flame, Trophy } from "lucide-react-native";
 import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -8,7 +8,6 @@ import { useGetPRsQuery, useGetReportQuery, useGetStreakQuery } from "../../api/
 import { ConsistencyStrip } from "../../components/analytics/ConsistencyStrip";
 import { StatTile } from "../../components/analytics/StatTile";
 import { StreakCard } from "../../components/analytics/StreakCard";
-import { VolumeBarChart } from "../../components/charts/VolumeBarChart";
 import { ReportsScreenSkeleton } from "../../components/Skeleton";
 import { ScreenBackground } from "../../components/ScreenBackground";
 import { keyFor } from "../../lib/workoutHelpers";
@@ -37,7 +36,7 @@ export function ReportsScreen() {
   const [range, setRange] = useState<Range>("week");
   const isFocused = useIsFocused();
 
-  const { data, isLoading, isFetching, error, refetch } = useGetReportQuery(range, {
+  const { data, isLoading, error, refetch } = useGetReportQuery(range, {
     pollingInterval: isFocused ? 4000 : 0,
   });
   const { data: streak, refetch: refetchStreak } = useGetStreakQuery(undefined, {
@@ -55,12 +54,7 @@ export function ReportsScreen() {
     }, [refetch, refetchStreak, refetchPRs])
   );
 
-  const totalVolume = useMemo(
-    () => (data?.volumeByDay ?? []).reduce((sum, d) => sum + d.volume, 0),
-    [data]
-  );
   const sessions = data?.sessionsThisWeek ?? 0;
-  const avgVolumePerSession = sessions > 0 ? Math.round(totalVolume / sessions) : 0;
 
   const newPRsCount = useMemo(() => {
     const startDate = rangeStartDate(range);
@@ -101,27 +95,21 @@ export function ReportsScreen() {
                 caption="kcal spent"
               />
               <StatTile icon={Dumbbell} iconColor={colors.warning} value={String(sessions)} caption="sessions" />
-              <StatTile
-                icon={Layers}
-                iconColor={colors.success}
-                value={`${avgVolumePerSession.toLocaleString()} kg`}
-                caption="avg volume / session"
-              />
               <StatTile icon={Trophy} iconColor="#A78BFA" value={String(newPRsCount)} caption="new PRs" />
             </View>
 
             <ConsistencyStrip data={data?.volumeByDay ?? []} />
 
-            <View style={styles.chartCard}>
-              <Text style={styles.chartTitle}>Volume by day (kg){isFetching ? "…" : ""}</Text>
-              <VolumeBarChart data={data?.volumeByDay ?? []} />
-            </View>
-
             {sessions === 0 ? (
               <Text style={styles.hint}>
                 Nothing here yet — reports update shortly after you log a completed set.
               </Text>
-            ) : null}
+            ) : (
+              <Text style={styles.hint}>
+                Want to see how a specific lift is progressing? Tap any exercise on the PRs tab for its full
+                weight/rep history.
+              </Text>
+            )}
           </>
         )}
         </ScrollView>
@@ -147,15 +135,6 @@ const styles = StyleSheet.create({
   loadingText: { fontFamily: fonts.body, fontSize: 13, color: colors.muted, textAlign: "center", marginTop: spacing.xl },
   errorText: { fontFamily: fonts.body, fontSize: 13, color: colors.error, textAlign: "center", marginTop: spacing.xl },
   statGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm + 2, marginBottom: spacing.md + 2 },
-  chartCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.md + 2,
-  },
-  chartTitle: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.muted, marginBottom: spacing.sm + 2 },
   hint: {
     fontFamily: fonts.body,
     fontSize: 12,

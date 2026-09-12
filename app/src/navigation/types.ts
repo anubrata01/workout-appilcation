@@ -15,6 +15,7 @@ export type AuthStackScreenProps<T extends keyof AuthStackParamList> = NativeSta
 
 export type MainTabParamList = {
   Session: undefined;
+  Nutrition: undefined;
   Reports: undefined;
   PRs: undefined;
   Settings: undefined;

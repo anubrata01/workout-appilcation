@@ -1,7 +1,11 @@
-import type { SetEntryDTO } from "../api/workoutApi";
+import type { ExerciseCategory, SetEntryDTO } from "../api/workoutApi";
 
 interface VolumeSource {
   exercises: { sets: SetEntryDTO[] }[];
+}
+
+interface CalorieSource {
+  exercises: { category: ExerciseCategory; sets: SetEntryDTO[] }[];
 }
 
 /**
@@ -54,6 +58,29 @@ export function dayVolume(day: VolumeSource | null | undefined): number {
 
 export function estimateCalories(volume: number): number {
   return Math.round(volume * 0.1 + (volume > 0 ? 90 : 0));
+}
+
+/**
+ * Rough flat-rate estimate (~8 kcal/min, in the ballpark of moderate-effort
+ * cardio) — there's no user bodyweight/heart-rate data to do a real
+ * MET-based calculation, so this is deliberately approximate, same spirit
+ * as the strength estimateCalories formula above.
+ */
+export function estimateCardioCalories(totalMinutes: number): number {
+  return Math.round(totalMinutes * 8);
+}
+
+/** Strength volume + cardio minutes, combined into one total — the one
+ * place this split is computed, so SessionScreen/DayRecordCard/HistoryScreen
+ * can't drift out of sync with each other on how a day's calories add up. */
+export function dayCalories(day: CalorieSource | null | undefined): number {
+  if (!day) return 0;
+  const cardioMinutes = day.exercises.reduce(
+    (sum, ex) =>
+      ex.category !== "cardio" ? sum : sum + ex.sets.reduce((s, set) => s + (set.done ? set.duration_minutes : 0), 0),
+    0
+  );
+  return estimateCalories(dayVolume(day)) + estimateCardioCalories(cardioMinutes);
 }
 
 // A small fixed set of accent-ish colors to cycle through deterministically —
