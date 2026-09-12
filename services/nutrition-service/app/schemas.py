@@ -39,17 +39,24 @@ class NutritionDayIn(BaseModel):
     # source of truth (same convention as Workout Service's WorkoutDayView),
     # so the client never sends it twice.
     water_ml: int = 0
+    weight_kg: float | None = None
     entries: list[FoodEntryIn] = Field(default_factory=list)
 
 
 class NutritionDayOut(BaseModel):
     date: date_type
     water_ml: int
+    weight_kg: float | None
     entries: list[FoodEntryOut]
 
     @classmethod
     def from_day(cls, day) -> "NutritionDayOut":
-        return cls(date=day.date, water_ml=day.water_ml, entries=[FoodEntryOut.from_entry(e) for e in day.entries])
+        return cls(
+            date=day.date,
+            water_ml=day.water_ml,
+            weight_kg=day.weight_kg,
+            entries=[FoodEntryOut.from_entry(e) for e in day.entries],
+        )
 
 
 class NutritionSummaryDay(BaseModel):

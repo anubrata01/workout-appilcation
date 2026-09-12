@@ -183,8 +183,18 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
             </View>
 
             <View style={styles.recordRow}>
-              <DayRecordCard label="Today" day={todayDay} isLoading={todayLoading} />
-              <DayRecordCard label="Yesterday" day={yesterdayDay} isLoading={yesterdayLoading} />
+              <DayRecordCard
+                label="Today"
+                day={todayDay}
+                isLoading={todayLoading}
+                onPress={() => navigation.navigate("History", { initialOffset: 0 })}
+              />
+              <DayRecordCard
+                label="Yesterday"
+                day={yesterdayDay}
+                isLoading={yesterdayLoading}
+                onPress={() => navigation.navigate("History", { initialOffset: -1 })}
+              />
             </View>
           </ScrollView>
 
@@ -206,7 +216,7 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
     <ScreenBackground>
       <SafeAreaView style={styles.screen} edges={["top"]}>
         <View style={styles.header}>
-          <Pressable style={styles.exitBtn} onPress={() => navigation.navigate("Reports")} hitSlop={8}>
+          <Pressable style={styles.exitBtn} onPress={confirmDiscard} hitSlop={8}>
             <ChevronDown size={18} color={colors.muted} />
             <Text style={styles.exitBtnText}>Exit</Text>
           </Pressable>
@@ -278,8 +288,9 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     alignItems: "center",
+    gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.sm,

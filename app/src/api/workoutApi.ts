@@ -89,7 +89,7 @@ export const workoutApi = createApi({
       }
     >({
       query: ({ date, body }) => ({ url: `/v1/workouts/days/${date}/`, method: "PUT", body }),
-      invalidatesTags: (_result, _error, { date }) => [{ type: "Day", id: date }],
+      invalidatesTags: (_result, error, { date }) => (error ? [] : [{ type: "Day", id: date }]),
     }),
     searchLibrary: builder.query<LibraryItemDTO[], { search?: string; category?: ExerciseCategory }>({
       query: ({ search, category }) => {

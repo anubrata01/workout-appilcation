@@ -76,6 +76,29 @@ class RecomputeTests(TestCase):
         self.assertEqual(pr.best_weight, 65)  # unchanged — 40kg wasn't a new best
         self.assertEqual(pr.trend, "down")
 
+    def test_two_sessions_same_day_daily_best_is_the_true_max_of_both(self):
+        """
+        A second session the same day appends its own Exercise entry rather
+        than merging into the first's (Workout Service serializers.py), so
+        one day's payload can list the same exercise name twice. The daily
+        best must reflect the heavier/harder set across BOTH entries, not
+        whichever entry happened to be processed last in the payload.
+        """
+        user_id = str(uuid.uuid4())
+        two_sessions_one_day = {
+            "exercises": [
+                {"name": "Bench Press", "sets": [{"weight": 80, "reps": 5, "done": True}]},
+                {"name": "Bench Press", "sets": [{"weight": 40, "reps": 12, "done": True}]},
+            ],
+        }
+        recompute_for_day(user_id, "2026-07-25", two_sessions_one_day)
+
+        best = ExerciseDailyBest.objects.get(user_id=user_id, exercise_name="Bench Press", date="2026-07-25")
+        self.assertEqual(best.weight, 80)
+
+        pr = PersonalRecord.objects.get(user_id=user_id, exercise_name="Bench Press")
+        self.assertEqual(pr.best_weight, 80)
+
     def test_last_performed_tracks_most_recent_regardless_of_pr(self):
         user_id = str(uuid.uuid4())
         recompute_for_day(user_id, "2026-07-20", PUSH_DAY)  # 60kg — also the PR

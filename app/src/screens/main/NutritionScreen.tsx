@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus, Utensils } from "lucide-react-native";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AddFoodModal } from "../../components/nutrition/AddFoodModal";
 import type { NewFoodEntry } from "../../components/nutrition/AddFoodModal";
+import { BodyWeightCard } from "../../components/nutrition/BodyWeightCard";
 import { FoodEntryCard } from "../../components/nutrition/FoodEntryCard";
 import { NutritionSummaryRow } from "../../components/nutrition/NutritionSummaryRow";
 import { WaterTracker } from "../../components/nutrition/WaterTracker";
@@ -36,6 +37,7 @@ export function NutritionScreen() {
   const [saveDay] = useSaveNutritionDayMutation();
   const [entries, setEntries] = useState<FoodEntryDTO[]>([]);
   const [waterMl, setWaterMl] = useState(0);
+  const [weightKg, setWeightKg] = useState<number | null>(null);
   const [addingFood, setAddingFood] = useState(false);
 
   const initializedDateRef = useRef<string | null>(null);
@@ -50,12 +52,14 @@ export function NutritionScreen() {
     if (data === undefined && isLoading) {
       setEntries([]);
       setWaterMl(0);
+      setWeightKg(null);
       return;
     }
     initializedDateRef.current = dateKey;
     skipNextSaveRef.current = true;
     setEntries(data?.entries ?? []);
     setWaterMl(data?.water_ml ?? 0);
+    setWeightKg(data?.weight_kg ?? null);
   }, [dateKey, data, isLoading]);
 
   useEffect(() => {
@@ -68,13 +72,17 @@ export function NutritionScreen() {
     saveTimerRef.current = setTimeout(() => {
       saveDay({
         date: dateKey,
-        body: { water_ml: waterMl, entries: entries.map(({ id, ...rest }) => rest) },
-      });
+        body: { water_ml: waterMl, weight_kg: weightKg, entries: entries.map(({ id, ...rest }) => rest) },
+      })
+        .unwrap()
+        .catch(() => {
+          Alert.alert("Couldn't save", "Your nutrition log didn't save — check your connection and try again.");
+        });
     }, SAVE_DEBOUNCE_MS);
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [entries, waterMl, dateKey, saveDay]);
+  }, [entries, waterMl, weightKg, dateKey, saveDay]);
 
   function handleAdd(entry: NewFoodEntry) {
     setEntries((prev) => [...prev, { ...entry, id: nextLocalKey() }]);
@@ -125,6 +133,7 @@ export function NutritionScreen() {
           />
 
           <WaterTracker waterMl={waterMl} onChange={setWaterMl} />
+          <BodyWeightCard weightKg={weightKg} onChange={setWeightKg} />
 
           {entries.length === 0 ? (
             <View style={styles.emptyState}>

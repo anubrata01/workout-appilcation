@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useGetExerciseProgressQuery, useGetPRsQuery } from "../../api/analyticsApi";
 import { LineChart } from "../charts/LineChart";
@@ -22,7 +22,19 @@ export function ExerciseProgressSection() {
     if (!selected && prs.length > 0) setSelected(prs[0].name);
   }, [prs, selected]);
 
-  const { data: points = [] } = useGetExerciseProgressQuery(selected ?? "", { skip: !selected });
+  const { data: points = [], isFetching } = useGetExerciseProgressQuery(selected ?? "", { skip: !selected });
+
+  // A soft crossfade instead of the chart abruptly swapping its data when
+  // you tap a different exercise chip — fades down while the new exercise's
+  // points are loading, back up once they land.
+  const opacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.timing(opacity, {
+      toValue: isFetching ? 0.25 : 1,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [isFetching, opacity]);
 
   if (prs.length === 0) return null;
 
@@ -45,16 +57,18 @@ export function ExerciseProgressSection() {
         ))}
       </ScrollView>
 
-      {points.length >= 2 ? (
-        <>
-          <Text style={styles.chartLabel}>Weight (kg)</Text>
-          <LineChart points={chartPoints} color={colors.accent} unit="kg" height={130} />
-          <Text style={styles.chartLabel}>Reps</Text>
-          <LineChart points={repsPoints} color={colors.success} height={130} />
-        </>
-      ) : (
-        <Text style={styles.emptyText}>Log this exercise a couple more times to see a trend.</Text>
-      )}
+      <Animated.View style={{ opacity }}>
+        {points.length >= 2 ? (
+          <>
+            <Text style={styles.chartLabel}>Weight (kg)</Text>
+            <LineChart points={chartPoints} color={colors.accent} unit="kg" height={130} />
+            <Text style={styles.chartLabel}>Reps</Text>
+            <LineChart points={repsPoints} color={colors.success} height={130} />
+          </>
+        ) : (
+          <Text style={styles.emptyText}>Log this exercise a couple more times to see a trend.</Text>
+        )}
+      </Animated.View>
     </View>
   );
 }

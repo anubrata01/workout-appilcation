@@ -22,6 +22,7 @@ export interface FoodEntryDTO {
 export interface NutritionDayDTO {
   date: string;
   water_ml: number;
+  weight_kg: number | null;
   entries: FoodEntryDTO[];
 }
 
@@ -52,10 +53,10 @@ export const nutritionApi = createApi({
     }),
     saveNutritionDay: builder.mutation<
       NutritionDayDTO,
-      { date: string; body: { water_ml: number; entries: Omit<FoodEntryDTO, "id">[] } }
+      { date: string; body: { water_ml: number; weight_kg: number | null; entries: Omit<FoodEntryDTO, "id">[] } }
     >({
       query: ({ date, body }) => ({ url: `/v1/nutrition/days/${date}`, method: "PUT", body }),
-      invalidatesTags: (_result, _error, { date }) => [{ type: "Day", id: date }, "Summary"],
+      invalidatesTags: (_result, error, { date }) => (error ? [] : [{ type: "Day", id: date }, "Summary"]),
     }),
     getNutritionSummary: builder.query<NutritionSummaryDayDTO[], "week" | "month">({
       query: (range) => `/v1/nutrition/summary?range=${range}`,

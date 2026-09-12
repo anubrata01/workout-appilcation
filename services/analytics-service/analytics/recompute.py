@@ -22,18 +22,27 @@ def _sync_exercise_daily_best(user_id: str, log_date: date, day_payload: dict) -
     (exercise removed). Returns every exercise name touched by this sync
     (before or after), which is exactly the set that needs its PersonalRecord
     recomputed.
+
+    A day's payload can contain more than one Exercise entry with the same
+    name — a second session the same day appends its own entries rather than
+    merging into the first's (Workout Service serializers.py). Sets are
+    grouped by name across every entry before picking the best, so the day's
+    true highest set wins regardless of which session logged it, instead of
+    whichever entry happened to be processed last silently overwriting an
+    earlier, better one.
     """
     previously_recorded = set(
         ExerciseDailyBest.objects.filter(user_id=user_id, date=log_date).values_list("exercise_name", flat=True)
     )
 
-    names_with_done_sets = set()
+    done_sets_by_name: dict[str, list[dict]] = {}
     for exercise in day_payload.get("exercises", []):
-        name = exercise["name"]
         done_sets = [s for s in exercise.get("sets", []) if s.get("done")]
         if not done_sets:
             continue
-        names_with_done_sets.add(name)
+        done_sets_by_name.setdefault(exercise["name"], []).extend(done_sets)
+
+    for name, done_sets in done_sets_by_name.items():
         best = max(done_sets, key=lambda s: (s["weight"], s["reps"]))
         ExerciseDailyBest.objects.update_or_create(
             user_id=user_id,
@@ -42,6 +51,7 @@ def _sync_exercise_daily_best(user_id: str, log_date: date, day_payload: dict) -
             defaults={"weight": best["weight"], "reps": best["reps"]},
         )
 
+    names_with_done_sets = set(done_sets_by_name)
     stale_names = previously_recorded - names_with_done_sets
     if stale_names:
         ExerciseDailyBest.objects.filter(user_id=user_id, date=log_date, exercise_name__in=stale_names).delete()

@@ -12,8 +12,11 @@ import type { MainStackScreenProps } from "../../navigation/types";
 /** Read-only browse of past sessions — finished sessions are no longer
  * editable inline (that's what the active Session tab is for); this is
  * purely a viewer, reusing the same getDay endpoint. */
-export function HistoryScreen({ navigation }: MainStackScreenProps<"History">) {
-  const [cursor, setCursor] = useState(-1); // start one day back — "today" belongs to the Session tab
+export function HistoryScreen({ navigation, route }: MainStackScreenProps<"History">) {
+  // Defaults to one day back ("today" normally belongs to the Session tab),
+  // but tapping the Today/Yesterday record card on that tab opens straight
+  // to the day that was tapped instead of always landing on yesterday.
+  const [cursor, setCursor] = useState(route.params?.initialOffset ?? -1);
   const activeDate = dayOffset(cursor);
   const dateKey = keyFor(activeDate);
   const { day: dayName, date: dateLabel } = formatDateHeader(activeDate);
@@ -74,8 +77,7 @@ export function HistoryScreen({ navigation }: MainStackScreenProps<"History">) {
                       Set {i + 1} —{" "}
                       {ex.category === "cardio"
                         ? `${s.duration_minutes}min · ${s.distance_km}km`
-                        : `${s.weight}kg × ${s.reps}`}{" "}
-                      {s.done ? "✓" : ""}
+                        : `${s.weight}kg × ${s.reps}`}
                     </Text>
                   ))}
                 </View>

@@ -10,9 +10,15 @@ import { useIsFocused } from "@react-navigation/native";
 export function FadeInOnFocus({ children }: { children: ReactNode }) {
   const isFocused = useIsFocused();
   const opacity = useRef(new Animated.Value(isFocused ? 1 : 0)).current;
+  // Screens stay mounted when you switch tabs away and back (see
+  // ReportsScreen's own focus-effect comment) — only the very first focus
+  // should fade in from blank. Re-blanking on every return visit is what
+  // made a tab look like it "goes blank" each time you came back to it.
+  const hasPlayedRef = useRef(isFocused);
 
   useEffect(() => {
-    if (!isFocused) return;
+    if (!isFocused || hasPlayedRef.current) return;
+    hasPlayedRef.current = true;
     opacity.setValue(0);
     Animated.timing(opacity, {
       toValue: 1,

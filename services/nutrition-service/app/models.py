@@ -21,6 +21,7 @@ class NutritionDay(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True, nullable=False)
     date: Mapped[date_type] = mapped_column(Date, nullable=False)
     water_ml: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

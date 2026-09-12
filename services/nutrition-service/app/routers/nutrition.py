@@ -81,6 +81,7 @@ def put_day(
         day.entries.clear()  # cascade="all, delete-orphan" removes the old rows
 
     day.water_ml = body.water_ml
+    day.weight_kg = body.weight_kg
 
     for i, entry in enumerate(body.entries):
         day.entries.append(

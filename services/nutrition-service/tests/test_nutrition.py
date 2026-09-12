@@ -130,6 +130,27 @@ def test_water_intake_saved_and_read_back():
     assert get.json()["water_ml"] == 750
 
 
+def test_body_weight_saved_and_read_back():
+    user_a = str(uuid.uuid4())
+    auth = f"Bearer {make_access_token(user_a)}"
+
+    put = client.put(
+        f"/api/v1/nutrition/days/{TODAY}", json={"weight_kg": 72.4, "entries": []}, headers={"Authorization": auth}
+    )
+    assert put.status_code == 200
+    assert put.json()["weight_kg"] == 72.4
+
+    get = client.get(f"/api/v1/nutrition/days/{TODAY}", headers={"Authorization": auth})
+    assert get.json()["weight_kg"] == 72.4
+
+
+def test_body_weight_defaults_to_null_when_omitted():
+    user_a = str(uuid.uuid4())
+    auth = f"Bearer {make_access_token(user_a)}"
+    resp = client.put(f"/api/v1/nutrition/days/{TODAY}", json={"entries": []}, headers={"Authorization": auth})
+    assert resp.json()["weight_kg"] is None
+
+
 def test_water_defaults_to_zero_when_omitted():
     user_a = str(uuid.uuid4())
     auth = f"Bearer {make_access_token(user_a)}"
