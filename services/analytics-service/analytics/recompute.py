@@ -147,7 +147,7 @@ def recompute_for_day(user_id: str, date_str: str, day_payload: dict) -> None:
     DailyVolumeSnapshot.objects.update_or_create(
         user_id=user_id,
         date=log_date,
-        defaults={"volume": volume, "calories": calories, "tag": day_payload.get("tag")},
+        defaults={"volume": volume, "calories": calories},
     )
 
     affected_names = _sync_exercise_daily_best(user_id, log_date, day_payload)

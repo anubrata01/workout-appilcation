@@ -3,6 +3,7 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text } from "re
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "../../components/PrimaryButton";
+import { ScreenBackground } from "../../components/ScreenBackground";
 import { TextField } from "../../components/TextField";
 import { useSignupMutation } from "../../api/authApi";
 import { saveTokens } from "../../lib/secureStorage";
@@ -42,50 +43,52 @@ export function SignUpScreen({ navigation }: AuthStackScreenProps<"SignUp">) {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Create account</Text>
+    <ScreenBackground>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <Text style={styles.title}>Create account</Text>
 
-        <TextField
-          label="Email"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          error={firstFieldError(error, "email")}
-        />
-        <TextField
-          label="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          error={firstFieldError(error, "password")}
-        />
-        <TextField
-          label="Confirm password"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          secureTextEntry
-          error={confirmError}
-        />
+          <TextField
+            label="Email"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            error={firstFieldError(error, "email")}
+          />
+          <TextField
+            label="Password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            error={firstFieldError(error, "password")}
+          />
+          <TextField
+            label="Confirm password"
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            secureTextEntry
+            error={confirmError}
+          />
 
-        <PrimaryButton label="Sign up" onPress={handleSubmit} loading={isLoading} />
+          <PrimaryButton label="Sign up" onPress={handleSubmit} loading={isLoading} />
 
-        <Text style={styles.loginLink} onPress={() => navigation.navigate("Login")}>
-          Already have an account? <Text style={styles.loginLinkAccent}>Log in</Text>
-        </Text>
-      </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          <Text style={styles.loginLink} onPress={() => navigation.navigate("Login")}>
+            Already have an account? <Text style={styles.loginLinkAccent}>Log in</Text>
+          </Text>
+        </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
+  container: { flex: 1 },
   scroll: { padding: spacing.xxl, paddingTop: spacing.lg },
   title: {
     fontFamily: fonts.display,

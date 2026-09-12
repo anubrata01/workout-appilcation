@@ -17,7 +17,7 @@ class ExerciseDailyBestAdmin(admin.ModelAdmin):
 
 @admin.register(DailyVolumeSnapshot)
 class DailyVolumeSnapshotAdmin(admin.ModelAdmin):
-    list_display = ["user_id", "date", "volume", "calories", "tag"]
+    list_display = ["user_id", "date", "volume", "calories"]
 
 
 @admin.register(StreakState)

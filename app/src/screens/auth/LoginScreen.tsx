@@ -3,6 +3,7 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text } from "re
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "../../components/PrimaryButton";
+import { ScreenBackground } from "../../components/ScreenBackground";
 import { TextField } from "../../components/TextField";
 import { useLoginMutation } from "../../api/authApi";
 import { saveTokens } from "../../lib/secureStorage";
@@ -35,34 +36,36 @@ export function LoginScreen({ navigation }: AuthStackScreenProps<"Login">) {
   const formError = error && !invalidCredentials;
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Log in</Text>
+    <ScreenBackground>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <Text style={styles.title}>Log in</Text>
 
-        <TextField label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
-        <TextField label="Password" value={password} onChangeText={setPassword} secureTextEntry />
+          <TextField label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
+          <TextField label="Password" value={password} onChangeText={setPassword} secureTextEntry />
 
-        {invalidCredentials ? <Text style={styles.error}>{invalidCredentials}</Text> : null}
-        {formError ? <Text style={styles.error}>Something went wrong — try again.</Text> : null}
+          {invalidCredentials ? <Text style={styles.error}>{invalidCredentials}</Text> : null}
+          {formError ? <Text style={styles.error}>Something went wrong — try again.</Text> : null}
 
-        <PrimaryButton label="Log in" onPress={handleSubmit} loading={isLoading} />
+          <PrimaryButton label="Log in" onPress={handleSubmit} loading={isLoading} />
 
-        <Text style={styles.link}>Forgot password?</Text>
-        <Text style={styles.loginLink} onPress={() => navigation.navigate("SignUp")}>
-          New here? <Text style={styles.loginLinkAccent}>Sign up</Text>
-        </Text>
-      </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          <Text style={styles.link}>Forgot password?</Text>
+          <Text style={styles.loginLink} onPress={() => navigation.navigate("SignUp")}>
+            New here? <Text style={styles.loginLinkAccent}>Sign up</Text>
+          </Text>
+        </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
+  container: { flex: 1 },
   scroll: { padding: spacing.xxl, paddingTop: spacing.lg },
   title: {
     fontFamily: fonts.display,

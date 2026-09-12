@@ -46,14 +46,14 @@ class WorkoutDayIsolationTests(APITestCase):
 
     def test_save_and_read_own_day(self):
         payload = {
-            "tag": "push",
+            "duration_seconds": 1800,
             "exercises": [{"name": "Bench Press", "sets": [{"weight": 60, "reps": 8, "done": True}]}],
         }
         put = self.client.put(
             f"/api/v1/workouts/days/{TODAY}/", payload, format="json", HTTP_AUTHORIZATION=self.auth_a
         )
         self.assertEqual(put.status_code, 200)
-        self.assertEqual(put.data["tag"], "push")
+        self.assertEqual(put.data["duration_seconds"], 1800)
         self.assertEqual(len(put.data["exercises"]), 1)
 
         get = self.client.get(f"/api/v1/workouts/days/{TODAY}/", HTTP_AUTHORIZATION=self.auth_a)
@@ -61,7 +61,7 @@ class WorkoutDayIsolationTests(APITestCase):
         self.assertEqual(get.data["exercises"][0]["name"], "Bench Press")
 
     def test_user_b_cannot_see_user_a_day(self):
-        payload = {"tag": "push", "exercises": []}
+        payload = {"exercises": []}
         self.client.put(f"/api/v1/workouts/days/{TODAY}/", payload, format="json", HTTP_AUTHORIZATION=self.auth_a)
 
         get_as_b = self.client.get(f"/api/v1/workouts/days/{TODAY}/", HTTP_AUTHORIZATION=self.auth_b)
@@ -73,13 +73,13 @@ class WorkoutDayIsolationTests(APITestCase):
         self.assertEqual(resp.status_code, 401)
 
     def test_can_edit_today_and_past(self):
-        payload = {"tag": "pull", "exercises": []}
+        payload = {"exercises": []}
         for d in (TODAY, YESTERDAY):
             resp = self.client.put(f"/api/v1/workouts/days/{d}/", payload, format="json", HTTP_AUTHORIZATION=self.auth_a)
             self.assertEqual(resp.status_code, 200, f"expected {d} to be editable")
 
     def test_cannot_edit_future_date(self):
-        payload = {"tag": "pull", "exercises": []}
+        payload = {"exercises": []}
         resp = self.client.put(
             f"/api/v1/workouts/days/{TOMORROW}/", payload, format="json", HTTP_AUTHORIZATION=self.auth_a
         )
@@ -106,48 +106,20 @@ class ExerciseLibraryTests(APITestCase):
         from django.core.management import call_command
 
         call_command("seed_exercise_library")
-        listed = self.client.get("/api/v1/workouts/library/?tag=push", HTTP_AUTHORIZATION=self.auth_a)
+        listed = self.client.get("/api/v1/workouts/library/?category=strength", HTTP_AUTHORIZATION=self.auth_a)
         self.assertEqual(listed.status_code, 200)
         self.assertGreater(len(listed.data), 5)
         self.assertTrue(all(item["is_curated"] for item in listed.data))
 
+    def test_seeded_library_includes_cardio_and_bodyweight(self):
+        from django.core.management import call_command
 
-class CustomTagTests(APITestCase):
-    def setUp(self):
-        self.user_a = str(uuid.uuid4())
-        self.user_b = str(uuid.uuid4())
-        self.auth_a = f"Bearer {make_access_token(self.user_a)}"
-        self.auth_b = f"Bearer {make_access_token(self.user_b)}"
+        call_command("seed_exercise_library")
+        cardio = self.client.get("/api/v1/workouts/library/?category=cardio", HTTP_AUTHORIZATION=self.auth_a)
+        self.assertGreater(len(cardio.data), 0)
 
-    def test_create_and_list_own_tags_only(self):
-        create = self.client.post(
-            "/api/v1/workouts/tags/", {"name": "Arms Day", "color": "#FF4519"}, HTTP_AUTHORIZATION=self.auth_a
-        )
-        self.assertEqual(create.status_code, 201)
-
-        mine = self.client.get("/api/v1/workouts/tags/", HTTP_AUTHORIZATION=self.auth_a)
-        self.assertEqual(len(mine.data), 1)
-        self.assertEqual(mine.data[0]["name"], "Arms Day")
-
-        others = self.client.get("/api/v1/workouts/tags/", HTTP_AUTHORIZATION=self.auth_b)
-        self.assertEqual(others.data, [])
-
-    def test_invalid_color_rejected(self):
-        resp = self.client.post(
-            "/api/v1/workouts/tags/", {"name": "Bad Tag", "color": "not-a-color"}, HTTP_AUTHORIZATION=self.auth_a
-        )
-        self.assertEqual(resp.status_code, 400)
-
-    def test_day_accepts_custom_tag_name(self):
-        self.client.post("/api/v1/workouts/tags/", {"name": "Arms Day", "color": "#FF4519"}, HTTP_AUTHORIZATION=self.auth_a)
-        resp = self.client.put(
-            f"/api/v1/workouts/days/{TODAY}/",
-            {"tag": "Arms Day", "exercises": []},
-            format="json",
-            HTTP_AUTHORIZATION=self.auth_a,
-        )
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["tag"], "Arms Day")
+        pushups = self.client.get("/api/v1/workouts/library/?search=Push-Ups", HTTP_AUTHORIZATION=self.auth_a)
+        self.assertTrue(any(item["is_bodyweight"] for item in pushups.data))
 
 
 class ExerciseLastSessionsTests(APITestCase):
@@ -159,7 +131,6 @@ class ExerciseLastSessionsTests(APITestCase):
 
     def test_returns_full_set_list_from_most_recent_session(self):
         multi_set_day = {
-            "tag": "push",
             "exercises": [
                 {
                     "name": "Bench Press",
@@ -190,8 +161,8 @@ class ExerciseLastSessionsTests(APITestCase):
         self.assertIsNone(resp.data["Never Logged Exercise"])
 
     def test_uses_most_recent_of_multiple_sessions(self):
-        older = {"tag": "push", "exercises": [{"name": "Squat", "sets": [{"weight": 80, "reps": 5, "done": True}]}]}
-        newer = {"tag": "push", "exercises": [{"name": "Squat", "sets": [{"weight": 90, "reps": 3, "done": True}]}]}
+        older = {"exercises": [{"name": "Squat", "sets": [{"weight": 80, "reps": 5, "done": True}]}]}
+        newer = {"exercises": [{"name": "Squat", "sets": [{"weight": 90, "reps": 3, "done": True}]}]}
         self.client.put(f"/api/v1/workouts/days/2026-07-20/", older, format="json", HTTP_AUTHORIZATION=self.auth_a)
         self.client.put(f"/api/v1/workouts/days/{YESTERDAY}/", newer, format="json", HTTP_AUTHORIZATION=self.auth_a)
 
@@ -202,7 +173,7 @@ class ExerciseLastSessionsTests(APITestCase):
         self.assertEqual(resp.data["Squat"]["sets"][0]["weight"], 90)
 
     def test_isolated_per_user(self):
-        day = {"tag": "push", "exercises": [{"name": "Bench Press", "sets": [{"weight": 60, "reps": 8, "done": True}]}]}
+        day = {"exercises": [{"name": "Bench Press", "sets": [{"weight": 60, "reps": 8, "done": True}]}]}
         self.client.put(f"/api/v1/workouts/days/{YESTERDAY}/", day, format="json", HTTP_AUTHORIZATION=self.auth_a)
 
         resp = self.client.post(

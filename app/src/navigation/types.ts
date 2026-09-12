@@ -14,7 +14,7 @@ export type AuthStackScreenProps<T extends keyof AuthStackParamList> = NativeSta
 >;
 
 export type MainTabParamList = {
-  Log: undefined;
+  Session: undefined;
   Reports: undefined;
   PRs: undefined;
   Settings: undefined;
@@ -22,6 +22,7 @@ export type MainTabParamList = {
 
 export type MainStackParamList = {
   MainTabs: undefined;
+  History: undefined;
 };
 
 export type MainTabScreenProps<T extends keyof MainTabParamList> = CompositeScreenProps<

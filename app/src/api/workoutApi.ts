@@ -4,8 +4,7 @@ import { REHYDRATE } from "redux-persist";
 import { WORKOUT_API_URL } from "../config";
 import { createServiceBaseQuery } from "./createServiceBaseQuery";
 
-// A logged day is immutable once written except through saveDay (which
-// already invalidates just that date's tag) — safe to keep it around long
+// A logged day is immutable once finished — safe to keep it around long
 // after the screen that fetched it unmounts, so revisiting a recent date
 // reads from cache instead of refetching. Paired with the persisted store
 // config (store/index.ts), this also survives an app restart.
@@ -23,33 +22,24 @@ export interface ExerciseDTO {
   sets: SetEntryDTO[];
 }
 
-export type TagId = "push" | "pull" | "legs" | "upper" | "lower" | "full";
-
-// A day's tag is either a built-in TagId or a custom tag's name — the backend
-// doesn't constrain it to the enum (workouts/models.py WorkoutDay.tag has no
-// `choices`), so the type here is deliberately just `string`.
 export interface WorkoutDayDTO {
   date: string;
-  tag: string | null;
+  duration_seconds: number | null;
   exercises: ExerciseDTO[];
 }
+
+export type ExerciseCategory = "strength" | "cardio";
 
 export interface LibraryItemDTO {
   id: string;
   name: string;
-  primary_tag: TagId | null;
+  category: ExerciseCategory;
+  is_bodyweight: boolean;
   muscle_group: string;
   equipment: string;
   image_url: string;
   description: string;
   is_curated: boolean;
-}
-
-export interface CustomTagDTO {
-  id: string;
-  name: string;
-  color: string;
-  created_at: string;
 }
 
 export interface LastSessionDTO {
@@ -60,7 +50,7 @@ export interface LastSessionDTO {
 export const workoutApi = createApi({
   reducerPath: "workoutApi",
   baseQuery: createServiceBaseQuery(WORKOUT_API_URL),
-  tagTypes: ["Day", "Library", "CustomTag"],
+  tagTypes: ["Day", "Library"],
   // Lets rehydrated cache from AsyncStorage (see store/index.ts) populate
   // this slice's query cache on launch, instead of every query starting empty
   // and refetching.
@@ -75,15 +65,18 @@ export const workoutApi = createApi({
       providesTags: (_result, _error, date) => [{ type: "Day", id: date }],
       keepUnusedDataFor: TWO_WEEKS_IN_SECONDS,
     }),
-    saveDay: builder.mutation<WorkoutDayDTO, { date: string; body: { tag: string | null; exercises: unknown[] } }>({
+    saveDay: builder.mutation<
+      WorkoutDayDTO,
+      { date: string; body: { duration_seconds: number | null; exercises: unknown[] } }
+    >({
       query: ({ date, body }) => ({ url: `/v1/workouts/days/${date}/`, method: "PUT", body }),
       invalidatesTags: (_result, _error, { date }) => [{ type: "Day", id: date }],
     }),
-    searchLibrary: builder.query<LibraryItemDTO[], { search?: string; tag?: TagId }>({
-      query: ({ search, tag }) => {
+    searchLibrary: builder.query<LibraryItemDTO[], { search?: string; category?: ExerciseCategory }>({
+      query: ({ search, category }) => {
         const params = new URLSearchParams();
         if (search) params.set("search", search);
-        if (tag) params.set("tag", tag);
+        if (category) params.set("category", category);
         return `/v1/workouts/library/?${params.toString()}`;
       },
       providesTags: ["Library"],
@@ -91,14 +84,6 @@ export const workoutApi = createApi({
     addCustomExercise: builder.mutation<LibraryItemDTO, { name: string }>({
       query: (body) => ({ url: "/v1/workouts/library/", method: "POST", body }),
       invalidatesTags: ["Library"],
-    }),
-    getCustomTags: builder.query<CustomTagDTO[], void>({
-      query: () => "/v1/workouts/tags/",
-      providesTags: ["CustomTag"],
-    }),
-    addCustomTag: builder.mutation<CustomTagDTO, { name: string; color: string }>({
-      query: (body) => ({ url: "/v1/workouts/tags/", method: "POST", body }),
-      invalidatesTags: ["CustomTag"],
     }),
     // The entire set list from the last time each of these exercises was
     // logged — not just the best set (that's PersonalRecord's job, served by
@@ -116,7 +101,5 @@ export const {
   useSaveDayMutation,
   useSearchLibraryQuery,
   useAddCustomExerciseMutation,
-  useGetCustomTagsQuery,
-  useAddCustomTagMutation,
   useGetExerciseLastSessionsQuery,
 } = workoutApi;

@@ -55,26 +55,6 @@ class ExerciseProgressView(APIView):
         return Response([{"date": str(record.best_date), "weight": record.best_weight, "reps": record.best_reps}])
 
 
-# Display labels for the 6 built-in tags only — mirrors workout-service's
-# TAG_CHOICES (accepted duplication for a solo build, TRD/implementation plan
-# Phase 2 note). A custom tag's name IS its display label already (whatever
-# the user typed when creating it) and must never be reformatted — doing so
-# was exactly the bug where Reports showed a mangled tag name that didn't
-# match what the Log tab shows for the same tag.
-BUILT_IN_TAG_LABELS = {
-    "push": "Push",
-    "pull": "Pull",
-    "legs": "Legs",
-    "upper": "Upper",
-    "lower": "Lower",
-    "full": "Full Body",
-}
-
-
-def _tag_display_label(tag: str) -> str:
-    return BUILT_IN_TAG_LABELS.get(tag, tag)
-
-
 class ReportView(APIView):
     """GET /api/v1/analytics/reports/?range=week|month (app flow doc 2.9)."""
 
@@ -95,7 +75,6 @@ class ReportView(APIView):
         volume_by_day = []
         total_calories = 0
         sessions = 0
-        tag_counts: dict[str, int] = {}
 
         for i in range(days):
             d = start + timedelta(days=i)
@@ -105,18 +84,13 @@ class ReportView(APIView):
             total_calories += calories
             if snap and snap.volume > 0:
                 sessions += 1
-                tag_key = snap.tag or "Untagged"
-                tag_counts[tag_key] = tag_counts.get(tag_key, 0) + 1
             volume_by_day.append({"label": d.strftime("%a"), "volume": volume})
-
-        tag_split = [{"tag": _tag_display_label(t), "value": c} for t, c in tag_counts.items()]
 
         return Response(
             {
                 "volumeByDay": volume_by_day,
                 "caloriesThisWeek": total_calories,
                 "sessionsThisWeek": sessions,
-                "tagSplit": tag_split,
             }
         )
 

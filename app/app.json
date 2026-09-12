@@ -1,19 +1,19 @@
 {
   "expo": {
-    "name": "LOADED",
+    "name": "GetFit",
     "slug": "loaded-workout-tracker",
     "scheme": "loadedapp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "package": "com.loadedapp.workout",
       "adaptiveIcon": {
-        "backgroundColor": "#0B0B09",
+        "backgroundColor": "#F7F5F0",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -36,7 +36,16 @@
           "color": "#FF4519"
         }
       ],
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/icon.png",
+          "imageWidth": 140,
+          "resizeMode": "contain",
+          "backgroundColor": "#F7F5F0"
+        }
+      ]
     ],
     "extra": {
       "eas": {

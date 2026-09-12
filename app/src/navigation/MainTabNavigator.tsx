@@ -1,8 +1,8 @@
 import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { BarChart3, ClipboardList, Settings as SettingsIcon, Trophy } from "lucide-react-native";
+import { BarChart3, Dumbbell, Settings as SettingsIcon, Trophy } from "lucide-react-native";
 
-import { LogScreen } from "../screens/main/LogScreen";
+import { SessionScreen } from "../screens/main/SessionScreen";
 import { ReportsScreen } from "../screens/main/ReportsScreen";
 import { PRsScreen } from "../screens/main/PRsScreen";
 import { SettingsScreen } from "../screens/main/SettingsScreen";
@@ -25,10 +25,10 @@ export function MainTabNavigator() {
       }}
     >
       <Tab.Screen
-        name="Log"
-        component={LogScreen}
+        name="Session"
+        component={SessionScreen}
         options={{
-          tabBarIcon: ({ color, focused }) => <ClipboardList size={18} color={focused ? colors.accent : color} />,
+          tabBarIcon: ({ color, focused }) => <Dumbbell size={18} color={focused ? colors.accent : color} />,
         }}
       />
       <Tab.Screen

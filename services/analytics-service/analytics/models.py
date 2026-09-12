@@ -63,7 +63,6 @@ class DailyVolumeSnapshot(models.Model):
     date = models.DateField()
     volume = models.FloatField(default=0)
     calories = models.PositiveIntegerField(default=0)
-    tag = models.CharField(max_length=20, blank=True, null=True)
 
     class Meta:
         ordering = ["-date"]

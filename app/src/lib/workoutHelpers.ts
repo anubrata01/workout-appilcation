@@ -1,40 +1,7 @@
-import { chartPalette, tagColors, type TagId } from "../theme/tokens";
 import type { SetEntryDTO } from "../api/workoutApi";
 
 interface VolumeSource {
   exercises: { sets: SetEntryDTO[] }[];
-}
-
-export const TAGS: { id: TagId; label: string }[] = [
-  { id: "push", label: "Push" },
-  { id: "pull", label: "Pull" },
-  { id: "legs", label: "Legs" },
-  { id: "upper", label: "Upper" },
-  { id: "lower", label: "Lower" },
-  { id: "full", label: "Full Body" },
-];
-
-export function isBuiltInTag(tag: string | null | undefined): tag is TagId {
-  return !!tag && tag in tagColors;
-}
-
-export function tagColor(id: TagId | null | undefined): string {
-  return id ? tagColors[id] : tagColors.full;
-}
-
-/**
- * A day's active tag can now be one of the 6 built-in ids or a user's custom
- * tag name (workouts/models.py WorkoutDay.tag has no `choices` constraint) —
- * this resolves either to a display color, falling back to chalk if it's
- * somehow neither (shouldn't happen, but a color is always required here).
- */
-export function resolveTagColor(
-  tag: string | null | undefined,
-  customTags: { name: string; color: string }[]
-): string {
-  if (isBuiltInTag(tag)) return tagColors[tag];
-  const custom = customTags.find((t) => t.name === tag);
-  return custom?.color ?? tagColors.full;
 }
 
 /**
@@ -89,18 +56,16 @@ export function estimateCalories(volume: number): number {
   return Math.round(volume * 0.1 + (volume > 0 ? 90 : 0));
 }
 
-/**
- * PersonalRecord (schema doc 3) deliberately doesn't carry a tag — Analytics
- * Service only ever sees an exercise name via the set_logged event payload,
- * not which tag that day was logged under. A deterministic per-name color
- * gives PR cards the same "accent dot" visual the prototype had via tag
- * color, without needing a backend change to thread tag through.
- */
+// A small fixed set of accent-ish colors to cycle through deterministically —
+// no longer tag-derived, just enough variety for a PR card's accent dot.
+const NAME_ACCENT_PALETTE = ["#FF4519", "#FF6B4A", "#1E9E70", "#B8791A", "#7C6FE0", "#3B9FD9"];
+
+/** A deterministic per-name color, so the same exercise always gets the same accent dot. */
 export function colorForExerciseName(name: string): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
     hash = (hash << 5) - hash + name.charCodeAt(i);
     hash |= 0;
   }
-  return chartPalette[Math.abs(hash) % chartPalette.length];
+  return NAME_ACCENT_PALETTE[Math.abs(hash) % NAME_ACCENT_PALETTE.length];
 }

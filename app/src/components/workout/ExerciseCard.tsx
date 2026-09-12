@@ -3,18 +3,34 @@ import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-nativ
 import { Check, Trash2 } from "lucide-react-native";
 
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
-import type { SetEntryDTO } from "../../api/workoutApi";
+import type { LastSessionDTO, SetEntryDTO } from "../../api/workoutApi";
+import { parseLocalDate } from "../../lib/workoutHelpers";
 
 interface Props {
   name: string;
   sets: SetEntryDTO[];
+  isBodyweight?: boolean;
+  lastSession?: LastSessionDTO | null;
   onRemove: () => void;
   onAddSet: () => void;
   onUpdateSet: (index: number, field: "weight" | "reps", value: number) => void;
   onToggleDone: (index: number) => void;
 }
 
-export function ExerciseCard({ name, sets, onRemove, onAddSet, onUpdateSet, onToggleDone }: Props) {
+function formatShortDate(iso: string): string {
+  return parseLocalDate(iso).toLocaleDateString("en-US", { day: "numeric", month: "short" });
+}
+
+export function ExerciseCard({
+  name,
+  sets,
+  isBodyweight,
+  lastSession,
+  onRemove,
+  onAddSet,
+  onUpdateSet,
+  onToggleDone,
+}: Props) {
   function confirmRemove() {
     // Deleting is effectively permanent once saved — it also removes this
     // exercise's contribution to today's PRs/reports the next time Analytics
@@ -28,7 +44,17 @@ export function ExerciseCard({ name, sets, onRemove, onAddSet, onUpdateSet, onTo
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <Text style={styles.name}>{name}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.name}>
+            {name}
+            {isBodyweight ? <Text style={styles.bodyweightTag}>  bodyweight</Text> : null}
+          </Text>
+          {lastSession ? (
+            <Text style={styles.lastSession}>
+              Last {formatShortDate(lastSession.date)}: {lastSession.sets.map((s) => `${s.weight}×${s.reps}`).join(", ")} kg
+            </Text>
+          ) : null}
+        </View>
         <Pressable onPress={confirmRemove} hitSlop={8}>
           <Trash2 size={14} color={colors.muted} />
         </Pressable>
@@ -36,7 +62,7 @@ export function ExerciseCard({ name, sets, onRemove, onAddSet, onUpdateSet, onTo
 
       <View style={styles.setHeaderRow}>
         <Text style={[styles.colLabel, { flex: 0.6 }]}>SET</Text>
-        <Text style={styles.colLabel}>WEIGHT (kg)</Text>
+        <Text style={styles.colLabel}>WEIGHT (kg){isBodyweight ? " · OPT" : ""}</Text>
         <Text style={styles.colLabel}>REPS</Text>
         <Text style={[styles.colLabel, { flex: 0.6, textAlign: "right" }]}>DONE</Text>
       </View>
@@ -86,8 +112,10 @@ const styles = StyleSheet.create({
     padding: spacing.md + 2,
     marginBottom: spacing.md,
   },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm + 2 },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: spacing.sm + 2 },
   name: { fontFamily: fonts.bodyBold, fontSize: 14.5, color: colors.chalk },
+  bodyweightTag: { fontFamily: fonts.data, fontSize: 9.5, color: colors.dim, textTransform: "uppercase" },
+  lastSession: { fontFamily: fonts.data, fontSize: 10.5, color: colors.dim, marginTop: 2 },
   setHeaderRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.xs + 2 },
   colLabel: { flex: 1, fontFamily: fonts.bodySemiBold, fontSize: 9.5, color: colors.faint, letterSpacing: 1 },
   setRow: { flexDirection: "row", gap: spacing.sm, alignItems: "center", marginBottom: spacing.xs + 2 },

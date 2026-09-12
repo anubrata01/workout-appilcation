@@ -1,13 +1,12 @@
 import React, { useEffect } from "react";
 import { NavigationContainer } from "@react-navigation/native";
-import { StyleSheet, View } from "react-native";
 
 import { AuthNavigator } from "./AuthNavigator";
 import { MainNavigator } from "./MainNavigator";
+import { LaunchScreen } from "../components/LaunchScreen";
 import { loadTokens } from "../lib/secureStorage";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { hydratedFromStorage } from "../store/authSlice";
-import { colors } from "../theme/tokens";
 
 /**
  * Hard gate per app flow doc §2.1: nothing behind Welcome is reachable
@@ -25,7 +24,7 @@ export function RootNavigator() {
   }, [dispatch]);
 
   if (hydrationStatus === "unknown") {
-    return <View style={styles.splash} />;
+    return <LaunchScreen />;
   }
 
   return (
@@ -34,7 +33,3 @@ export function RootNavigator() {
     </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  splash: { flex: 1, backgroundColor: colors.bg },
-});

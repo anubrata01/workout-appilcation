@@ -10,13 +10,17 @@ import {
   useSearchLibraryQuery,
 } from "../../api/workoutApi";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
-import { isBuiltInTag, parseLocalDate } from "../../lib/workoutHelpers";
+import { parseLocalDate } from "../../lib/workoutHelpers";
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
+
+export interface PickedExercise {
+  name: string;
+  isBodyweight: boolean;
+}
 
 interface Props {
   visible: boolean;
-  tag: string | null;
-  onPick: (name: string) => void;
+  onPick: (exercise: PickedExercise) => void;
   onClose: () => void;
 }
 
@@ -24,16 +28,12 @@ function formatShortDate(iso: string): string {
   return parseLocalDate(iso).toLocaleDateString("en-US", { day: "numeric", month: "short" });
 }
 
-export function ExercisePicker({ visible, tag, onPick, onClose }: Props) {
+export function ExercisePicker({ visible, onPick, onClose }: Props) {
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebouncedValue(query, 300);
 
-  // The curated library only knows the 6 built-in tags (primary_tag) — a
-  // custom tag has no corresponding library filter, so it just shows everything.
-  const libraryTagFilter = isBuiltInTag(tag) ? tag : undefined;
-
   const { data: results = [], isFetching } = useSearchLibraryQuery(
-    { search: debouncedQuery || undefined, tag: libraryTagFilter },
+    { search: debouncedQuery || undefined },
     { skip: !visible }
   );
   const [addCustomExercise, { isLoading: addingCustom }] = useAddCustomExerciseMutation();
@@ -58,17 +58,19 @@ export function ExercisePicker({ visible, tag, onPick, onClose }: Props) {
   async function handleAddCustom() {
     const name = query.trim();
     if (!name) return;
+    let isBodyweight = false;
     try {
-      await addCustomExercise({ name }).unwrap();
+      const created = await addCustomExercise({ name }).unwrap();
+      isBodyweight = created.is_bodyweight;
     } catch {
       // If it already exists (e.g. re-adding your own custom entry), fall through and just use the name.
     }
-    onPick(name);
+    onPick({ name, isBodyweight });
     setQuery("");
   }
 
-  function handlePick(name: string) {
-    onPick(name);
+  function handlePick(name: string, isBodyweight: boolean) {
+    onPick({ name, isBodyweight });
     setQuery("");
   }
 
@@ -107,8 +109,11 @@ export function ExercisePicker({ visible, tag, onPick, onClose }: Props) {
               const pr = prByName.get(item.name);
               const lastSession = lastSessions[item.name];
               return (
-                <Pressable style={styles.item} onPress={() => handlePick(item.name)}>
-                  <Text style={styles.itemText}>{item.name}</Text>
+                <Pressable style={styles.item} onPress={() => handlePick(item.name, item.is_bodyweight)}>
+                  <Text style={styles.itemText}>
+                    {item.name}
+                    {item.is_bodyweight ? <Text style={styles.itemBodyweight}>  bodyweight</Text> : null}
+                  </Text>
                   {lastSession ? (
                     <Text style={styles.itemHistory}>
                       Last {formatShortDate(lastSession.date)}:{" "}
@@ -173,7 +178,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     marginBottom: spacing.sm - 2,
   },
-  itemText: { fontFamily: fonts.body, fontSize: 13.5, color: "#D8D4C6" },
+  itemText: { fontFamily: fonts.body, fontSize: 13.5, color: colors.chalk },
+  itemBodyweight: { fontFamily: fonts.data, fontSize: 9.5, color: colors.dim, textTransform: "uppercase" },
   itemHistory: { fontFamily: fonts.data, fontSize: 10.5, color: colors.dim, marginTop: 3 },
   itemRecord: { fontFamily: fonts.data, fontSize: 10.5, color: colors.accentWarm, marginTop: 2 },
   emptyText: { fontFamily: fonts.body, fontSize: 12.5, color: colors.dim, textAlign: "center", padding: spacing.lg },

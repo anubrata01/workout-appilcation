@@ -8,16 +8,10 @@ export interface VolumeByDay {
   volume: number;
 }
 
-export interface TagSplitEntry {
-  tag: string;
-  value: number;
-}
-
 export interface ReportDTO {
   volumeByDay: VolumeByDay[];
   caloriesThisWeek: number;
   sessionsThisWeek: number;
-  tagSplit: TagSplitEntry[];
 }
 
 export interface PersonalRecordDTO {

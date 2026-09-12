@@ -9,9 +9,8 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from .events import publish_set_logged
-from .models import CustomTag, Exercise, ExerciseLibraryItem, TemplateExerciseItem, WorkoutDay, WorkoutTemplate
+from .models import Exercise, ExerciseLibraryItem, TemplateExerciseItem, WorkoutDay, WorkoutTemplate
 from .serializers import (
-    CustomTagSerializer,
     ExerciseLibraryItemSerializer,
     WorkoutDaySerializer,
     WorkoutTemplateSerializer,
@@ -73,7 +72,7 @@ class WorkoutDayView(APIView):
 
 
 class ExerciseLibraryView(APIView):
-    """GET /api/v1/workouts/library/?search=&tag=&muscle_group= — curated items + the caller's own custom ones."""
+    """GET /api/v1/workouts/library/?search=&category=&muscle_group= — curated items + the caller's own custom ones."""
 
     throttle_classes = [ScopedRateThrottle]
 
@@ -88,9 +87,9 @@ class ExerciseLibraryView(APIView):
         search = request.query_params.get("search")
         if search:
             qs = qs.filter(name__icontains=search)
-        tag = request.query_params.get("tag")
-        if tag:
-            qs = qs.filter(primary_tag=tag)
+        category = request.query_params.get("category")
+        if category:
+            qs = qs.filter(category=category)
         muscle_group = request.query_params.get("muscle_group")
         if muscle_group:
             qs = qs.filter(muscle_group__iexact=muscle_group)
@@ -172,23 +171,3 @@ class ExerciseLastSessionsView(APIView):
                     "sets": [{"weight": s.weight, "reps": s.reps, "done": s.done} for s in exercise.sets.all()],
                 }
         return Response(results)
-
-
-class CustomTagListView(APIView):
-    """GET/POST /api/v1/workouts/tags/ — a user's own session tags, alongside the 6 built-in ones."""
-
-    throttle_classes = [ScopedRateThrottle]
-
-    def get_throttles(self):
-        self.throttle_scope = "workout-write" if self.request.method == "POST" else "workout-read"
-        return super().get_throttles()
-
-    def get(self, request):
-        tags = CustomTag.objects.filter(user_id=request.user.id)
-        return Response(CustomTagSerializer(tags, many=True).data)
-
-    def post(self, request):
-        serializer = CustomTagSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        tag = serializer.save(user_id=request.user.id)
-        return Response(CustomTagSerializer(tag).data, status=status.HTTP_201_CREATED)

@@ -6,6 +6,7 @@ import { analyticsApi } from "../api/analyticsApi";
 import { baseApi } from "../api/baseApi";
 import { notificationApi } from "../api/notificationApi";
 import { workoutApi } from "../api/workoutApi";
+import activeSessionReducer from "./activeSessionSlice";
 import authReducer from "./authSlice";
 
 // Only `queries` is persisted — `subscriptions`/`config` are runtime-only
@@ -19,6 +20,7 @@ const persistedWorkoutApiReducer = persistReducer(
 export const store = configureStore({
   reducer: {
     auth: authReducer,
+    activeSession: activeSessionReducer,
     [baseApi.reducerPath]: baseApi.reducer,
     [workoutApi.reducerPath]: persistedWorkoutApiReducer,
     [analyticsApi.reducerPath]: analyticsApi.reducer,

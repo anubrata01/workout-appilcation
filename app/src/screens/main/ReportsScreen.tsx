@@ -8,8 +8,9 @@ import { useGetPRsQuery, useGetReportQuery, useGetStreakQuery } from "../../api/
 import { ConsistencyStrip } from "../../components/analytics/ConsistencyStrip";
 import { StatTile } from "../../components/analytics/StatTile";
 import { StreakCard } from "../../components/analytics/StreakCard";
-import { TagSplitDonut } from "../../components/charts/TagSplitDonut";
 import { VolumeBarChart } from "../../components/charts/VolumeBarChart";
+import { ReportsScreenSkeleton } from "../../components/Skeleton";
+import { ScreenBackground } from "../../components/ScreenBackground";
 import { keyFor } from "../../lib/workoutHelpers";
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
 
@@ -67,73 +68,70 @@ export function ReportsScreen() {
   }, [prs, range]);
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <ScrollView contentContainerStyle={styles.content}>
-      <View style={styles.segmented}>
-        {(["week", "month"] as Range[]).map((r) => (
-          <Pressable
-            key={r}
-            onPress={() => setRange(r)}
-            style={[styles.segment, range === r && styles.segmentActive]}
-          >
-            <Text style={[styles.segmentLabel, range === r && styles.segmentLabelActive]}>
-              {r === "week" ? "Week" : "Month"}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+    <ScreenBackground>
+      <SafeAreaView style={styles.screen} edges={["top"]}>
+        <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.segmented}>
+          {(["week", "month"] as Range[]).map((r) => (
+            <Pressable
+              key={r}
+              onPress={() => setRange(r)}
+              style={[styles.segment, range === r && styles.segmentActive]}
+            >
+              <Text style={[styles.segmentLabel, range === r && styles.segmentLabelActive]}>
+                {r === "week" ? "Week" : "Month"}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
 
-      {streak ? <StreakCard currentStreak={streak.currentStreak} longestStreak={streak.longestStreak} /> : null}
+        {streak ? <StreakCard currentStreak={streak.currentStreak} longestStreak={streak.longestStreak} /> : null}
 
-      {error ? (
-        <Text style={styles.errorText}>Couldn't load reports — pull to retry.</Text>
-      ) : isLoading ? (
-        <Text style={styles.loadingText}>Loading…</Text>
-      ) : (
-        <>
-          <View style={styles.statGrid}>
-            <StatTile
-              icon={Flame}
-              iconColor={colors.accentWarm}
-              value={(data?.caloriesThisWeek ?? 0).toLocaleString()}
-              caption="kcal spent"
-            />
-            <StatTile icon={Dumbbell} iconColor={colors.warning} value={String(sessions)} caption="sessions" />
-            <StatTile
-              icon={Layers}
-              iconColor={colors.success}
-              value={`${avgVolumePerSession.toLocaleString()} kg`}
-              caption="avg volume / session"
-            />
-            <StatTile icon={Trophy} iconColor="#A78BFA" value={String(newPRsCount)} caption="new PRs" />
-          </View>
+        {error ? (
+          <Text style={styles.errorText}>Couldn't load reports — pull to retry.</Text>
+        ) : isLoading ? (
+          <ReportsScreenSkeleton />
+        ) : (
+          <>
+            <View style={styles.statGrid}>
+              <StatTile
+                icon={Flame}
+                iconColor={colors.accentWarm}
+                value={(data?.caloriesThisWeek ?? 0).toLocaleString()}
+                caption="kcal spent"
+              />
+              <StatTile icon={Dumbbell} iconColor={colors.warning} value={String(sessions)} caption="sessions" />
+              <StatTile
+                icon={Layers}
+                iconColor={colors.success}
+                value={`${avgVolumePerSession.toLocaleString()} kg`}
+                caption="avg volume / session"
+              />
+              <StatTile icon={Trophy} iconColor="#A78BFA" value={String(newPRsCount)} caption="new PRs" />
+            </View>
 
-          <ConsistencyStrip data={data?.volumeByDay ?? []} />
+            <ConsistencyStrip data={data?.volumeByDay ?? []} />
 
-          <View style={styles.chartCard}>
-            <Text style={styles.chartTitle}>Volume by day (kg){isFetching ? "…" : ""}</Text>
-            <VolumeBarChart data={data?.volumeByDay ?? []} />
-          </View>
+            <View style={styles.chartCard}>
+              <Text style={styles.chartTitle}>Volume by day (kg){isFetching ? "…" : ""}</Text>
+              <VolumeBarChart data={data?.volumeByDay ?? []} />
+            </View>
 
-          <View style={styles.chartCard}>
-            <Text style={styles.chartTitle}>Split by tag</Text>
-            <TagSplitDonut data={data?.tagSplit ?? []} />
-          </View>
-
-          {sessions === 0 ? (
-            <Text style={styles.hint}>
-              Nothing here yet — reports update shortly after you log a completed set.
-            </Text>
-          ) : null}
-        </>
-      )}
-      </ScrollView>
-    </SafeAreaView>
+            {sessions === 0 ? (
+              <Text style={styles.hint}>
+                Nothing here yet — reports update shortly after you log a completed set.
+              </Text>
+            ) : null}
+          </>
+        )}
+        </ScrollView>
+      </SafeAreaView>
+    </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+  screen: { flex: 1 },
   content: { padding: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
   segmented: {
     flexDirection: "row",

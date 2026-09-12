@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
-import { Dumbbell } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { statusCodes, isErrorWithCode } from "@react-native-google-signin/google-signin";
 
+import { Logo } from "../../components/Logo";
 import { PrimaryButton } from "../../components/PrimaryButton";
+import { ScreenBackground } from "../../components/ScreenBackground";
 import { useGoogleAuthMutation } from "../../api/authApi";
 import { signInWithGoogle } from "../../lib/googleSignIn";
 import { saveTokens } from "../../lib/secureStorage";
@@ -32,31 +33,29 @@ export function WelcomeScreen({ navigation }: AuthStackScreenProps<"Welcome">) {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.brand}>
-        <View style={styles.brandMark}>
-          <Dumbbell size={22} color={colors.track} strokeWidth={2.5} />
+    <ScreenBackground>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.brand}>
+          <Logo />
+          <Text style={styles.brandSub}>workout log</Text>
         </View>
-        <Text style={styles.brandText}>LOADED</Text>
-        <Text style={styles.brandSub}>workout log</Text>
-      </View>
 
-      <View style={styles.actions}>
-        <PrimaryButton label="Continue with Google" onPress={handleGoogleSignIn} loading={signingIn} />
-        <View style={{ height: spacing.md }} />
-        <PrimaryButton label="Sign up with email" onPress={() => navigation.navigate("SignUp")} />
-        <Text style={styles.loginLink} onPress={() => navigation.navigate("Login")}>
-          Already have an account? <Text style={styles.loginLinkAccent}>Log in</Text>
-        </Text>
-      </View>
-    </SafeAreaView>
+        <View style={styles.actions}>
+          <PrimaryButton label="Continue with Google" onPress={handleGoogleSignIn} loading={signingIn} />
+          <View style={{ height: spacing.md }} />
+          <PrimaryButton label="Sign up with email" onPress={() => navigation.navigate("SignUp")} />
+          <Text style={styles.loginLink} onPress={() => navigation.navigate("Login")}>
+            Already have an account? <Text style={styles.loginLinkAccent}>Log in</Text>
+          </Text>
+        </View>
+      </SafeAreaView>
+    </ScreenBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
     justifyContent: "space-between",
     padding: spacing.xxl,
     paddingTop: spacing.xxl,
@@ -64,21 +63,6 @@ const styles = StyleSheet.create({
   },
   brand: {
     alignItems: "center",
-  },
-  brandMark: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: spacing.lg,
-  },
-  brandText: {
-    fontFamily: fonts.display,
-    fontSize: 42,
-    letterSpacing: 2,
-    color: colors.chalk,
   },
   brandSub: {
     fontFamily: fonts.data,

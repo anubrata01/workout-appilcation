@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import CustomTag, Exercise, ExerciseLibraryItem, SetEntry, TemplateExerciseItem, WorkoutDay, WorkoutTemplate
+from .models import Exercise, ExerciseLibraryItem, SetEntry, TemplateExerciseItem, WorkoutDay, WorkoutTemplate
 
 
 class SetEntrySerializer(serializers.ModelSerializer):
@@ -23,25 +23,26 @@ class ExerciseSerializer(serializers.ModelSerializer):
 
 class WorkoutDaySerializer(serializers.ModelSerializer):
     date = serializers.DateField()
+    duration_seconds = serializers.IntegerField(required=False, allow_null=True)
     exercises = ExerciseSerializer(many=True)
 
     class Meta:
         model = WorkoutDay
-        fields = ["date", "tag", "exercises"]
+        fields = ["date", "duration_seconds", "exercises"]
 
     def create(self, validated_data):
         """
-        The client always PUTs the *whole* day on every change (app flow doc 2.6),
-        same contract as the prototype's WorkoutDaySerializer. Upsert the day
-        scoped to user_id (passed in via context, never trusted from the payload),
-        then wipe and rewrite its exercises/sets from what was sent.
+        The client PUTs the whole finished session in one call (app flow doc
+        2.6 — no more incremental autosave). Upsert the day scoped to user_id
+        (passed in via context, never trusted from the payload), then wipe
+        and rewrite its exercises/sets from what was sent.
         """
         user_id = self.context["user_id"]
         exercises_data = validated_data.pop("exercises", [])
         day, _ = WorkoutDay.objects.update_or_create(
             user_id=user_id,
             date=validated_data["date"],
-            defaults={"tag": validated_data.get("tag")},
+            defaults={"duration_seconds": validated_data.get("duration_seconds")},
         )
         day.exercises.all().delete()
         for i, ex in enumerate(exercises_data):
@@ -52,19 +53,20 @@ class WorkoutDaySerializer(serializers.ModelSerializer):
         return day
 
 
-class CustomTagSerializer(serializers.ModelSerializer):
-    color = serializers.RegexField(regex=r"^#[0-9A-Fa-f]{6}$")
-
-    class Meta:
-        model = CustomTag
-        fields = ["id", "name", "color", "created_at"]
-        read_only_fields = ["id", "created_at"]
-
-
 class ExerciseLibraryItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = ExerciseLibraryItem
-        fields = ["id", "name", "primary_tag", "muscle_group", "equipment", "image_url", "description", "is_curated"]
+        fields = [
+            "id",
+            "name",
+            "category",
+            "is_bodyweight",
+            "muscle_group",
+            "equipment",
+            "image_url",
+            "description",
+            "is_curated",
+        ]
         read_only_fields = ["id", "is_curated"]
 
 

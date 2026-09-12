@@ -2,13 +2,9 @@ import uuid
 
 from django.db import models
 
-TAG_CHOICES = [
-    ("push", "Push"),
-    ("pull", "Pull"),
-    ("legs", "Legs"),
-    ("upper", "Upper"),
-    ("lower", "Lower"),
-    ("full", "Full Body"),
+CATEGORY_CHOICES = [
+    ("strength", "Strength"),
+    ("cardio", "Cardio"),
 ]
 
 
@@ -16,14 +12,13 @@ class WorkoutDay(models.Model):
     """One row per user per calendar date (schema doc 2). user_id is not a DB FK —
     Auth Service owns that table; ownership is enforced at the application layer.
 
-    `tag` intentionally has no `choices` constraint — it holds either one of
-    the 6 built-in tag ids or a user's custom tag name (see CustomTag below),
-    and the DB shouldn't need to know the difference."""
+    `duration_seconds` is set once, when a session is finished — sessions are
+    no longer autosaved incrementally, so this is null until then."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user_id = models.UUIDField(db_index=True)
     date = models.DateField()
-    tag = models.CharField(max_length=40, blank=True, null=True)
+    duration_seconds = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -32,24 +27,7 @@ class WorkoutDay(models.Model):
         constraints = [models.UniqueConstraint(fields=["user_id", "date"], name="unique_user_date")]
 
     def __str__(self):
-        return f"{self.user_id} · {self.date} ({self.tag or 'untagged'})"
-
-
-class CustomTag(models.Model):
-    """A user-created session tag alongside the 6 built-in ones (app flow doc)."""
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user_id = models.UUIDField(db_index=True)
-    name = models.CharField(max_length=40)
-    color = models.CharField(max_length=7)  # hex, e.g. "#FF4519" — assigned client-side from the shared palette
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["name"]
-        constraints = [models.UniqueConstraint(fields=["user_id", "name"], name="unique_user_custom_tag_name")]
-
-    def __str__(self):
-        return self.name
+        return f"{self.user_id} · {self.date}"
 
 
 class ExerciseLibraryItem(models.Model):
@@ -58,7 +36,8 @@ class ExerciseLibraryItem(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner_user_id = models.UUIDField(null=True, blank=True, db_index=True)
     name = models.CharField(max_length=120)
-    primary_tag = models.CharField(max_length=20, choices=TAG_CHOICES, blank=True, null=True)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="strength")
+    is_bodyweight = models.BooleanField(default=False)
     muscle_group = models.CharField(max_length=60, blank=True)
     equipment = models.CharField(max_length=60, blank=True)
     image_url = models.URLField(blank=True)

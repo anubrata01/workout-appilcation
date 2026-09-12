@@ -26,7 +26,6 @@ def make_access_token(user_id):
 
 
 PUSH_DAY = {
-    "tag": "push",
     "exercises": [{"name": "Bench Press", "sets": [{"weight": 60, "reps": 8, "done": True}]}],
 }
 
@@ -61,7 +60,6 @@ class RecomputeTests(TestCase):
         recompute_for_day(user_id, "2026-07-20", PUSH_DAY)  # 60kg
 
         heavier = {
-            "tag": "push",
             "exercises": [{"name": "Bench Press", "sets": [{"weight": 65, "reps": 5, "done": True}]}],
         }
         recompute_for_day(user_id, "2026-07-22", heavier)
@@ -71,7 +69,6 @@ class RecomputeTests(TestCase):
         self.assertEqual(pr.previous_weight, 60)
 
         lighter = {
-            "tag": "push",
             "exercises": [{"name": "Bench Press", "sets": [{"weight": 40, "reps": 5, "done": True}]}],
         }
         recompute_for_day(user_id, "2026-07-23", lighter)
@@ -84,7 +81,6 @@ class RecomputeTests(TestCase):
         recompute_for_day(user_id, "2026-07-20", PUSH_DAY)  # 60kg — also the PR
 
         lighter = {
-            "tag": "push",
             "exercises": [{"name": "Bench Press", "sets": [{"weight": 40, "reps": 5, "done": True}]}],
         }
         recompute_for_day(user_id, "2026-07-24", lighter)  # not a PR, but the most recent session
@@ -98,7 +94,6 @@ class RecomputeTests(TestCase):
         recompute_for_day(user_id, "2026-07-24", PUSH_DAY)
 
         older_edit = {
-            "tag": "push",
             "exercises": [{"name": "Bench Press", "sets": [{"weight": 55, "reps": 8, "done": True}]}],
         }
         recompute_for_day(user_id, "2026-07-20", older_edit)  # editing a day before the most recent one
@@ -111,7 +106,7 @@ class RecomputeTests(TestCase):
         recompute_for_day(user_id, "2026-07-25", PUSH_DAY)
         self.assertTrue(PersonalRecord.objects.filter(user_id=user_id, exercise_name="Bench Press").exists())
 
-        emptied_day = {"tag": "push", "exercises": [{"name": "Bench Press", "sets": [{"weight": 60, "reps": 8, "done": False}]}]}
+        emptied_day = {"exercises": [{"name": "Bench Press", "sets": [{"weight": 60, "reps": 8, "done": False}]}]}
         recompute_for_day(user_id, "2026-07-25", emptied_day)  # set unmarked as done, not deleted from the payload
         self.assertFalse(PersonalRecord.objects.filter(user_id=user_id, exercise_name="Bench Press").exists())
         self.assertFalse(ExerciseDailyBest.objects.filter(user_id=user_id, exercise_name="Bench Press").exists())
@@ -120,20 +115,20 @@ class RecomputeTests(TestCase):
         user_id = str(uuid.uuid4())
         recompute_for_day(user_id, "2026-07-25", PUSH_DAY)
 
-        day_without_bench = {"tag": "push", "exercises": []}
+        day_without_bench = {"exercises": []}
         recompute_for_day(user_id, "2026-07-25", day_without_bench)
         self.assertFalse(PersonalRecord.objects.filter(user_id=user_id, exercise_name="Bench Press").exists())
 
     def test_deleting_the_pr_setting_day_falls_back_to_next_best(self):
         user_id = str(uuid.uuid4())
-        heavier = {"tag": "push", "exercises": [{"name": "Bench Press", "sets": [{"weight": 65, "reps": 5, "done": True}]}]}
+        heavier = {"exercises": [{"name": "Bench Press", "sets": [{"weight": 65, "reps": 5, "done": True}]}]}
         recompute_for_day(user_id, "2026-07-20", PUSH_DAY)  # 60kg
         recompute_for_day(user_id, "2026-07-22", heavier)  # 65kg — the new PR
         pr = PersonalRecord.objects.get(user_id=user_id, exercise_name="Bench Press")
         self.assertEqual(pr.best_weight, 65)
 
         # Delete the 65kg day entirely (e.g. the user removed that exercise from that day).
-        recompute_for_day(user_id, "2026-07-22", {"tag": "push", "exercises": []})
+        recompute_for_day(user_id, "2026-07-22", {"exercises": []})
         pr.refresh_from_db()
         self.assertEqual(pr.best_weight, 60)  # falls back to the 20th's 60kg — no longer stuck at a value that no longer exists
         self.assertEqual(str(pr.best_date), "2026-07-20")
@@ -141,7 +136,7 @@ class RecomputeTests(TestCase):
     def test_deleting_last_remaining_history_removes_the_pr_and_snapshot_volume(self):
         user_id = str(uuid.uuid4())
         recompute_for_day(user_id, "2026-07-25", PUSH_DAY)
-        recompute_for_day(user_id, "2026-07-25", {"tag": "push", "exercises": []})
+        recompute_for_day(user_id, "2026-07-25", {"exercises": []})
 
         self.assertFalse(PersonalRecord.objects.filter(user_id=user_id, exercise_name="Bench Press").exists())
         snapshot = DailyVolumeSnapshot.objects.get(user_id=user_id, date="2026-07-25")
@@ -172,33 +167,3 @@ class AnalyticsApiTests(APITestCase):
 
         prs = self.client.get("/api/v1/analytics/prs/", HTTP_AUTHORIZATION=f"Bearer {make_access_token(user_b)}")
         self.assertEqual(prs.data, [])
-
-    def test_custom_tag_name_is_not_mangled_in_reports(self):
-        from datetime import date as _date
-
-        user_id = str(uuid.uuid4())
-        today_str = _date.today().isoformat()
-        recompute_for_day(
-            user_id,
-            today_str,
-            {"tag": "HIIT Day", "exercises": [{"name": "Kettlebell Swing", "sets": [{"weight": 16, "reps": 20, "done": True}]}]},
-        )
-
-        report = self.client.get(
-            "/api/v1/analytics/reports/?range=week", HTTP_AUTHORIZATION=f"Bearer {make_access_token(user_id)}"
-        )
-        tags = {entry["tag"] for entry in report.data["tagSplit"]}
-        self.assertIn("HIIT Day", tags)  # not "Hiit Day" — a custom tag's casing is never reformatted
-
-    def test_built_in_tag_gets_its_display_label(self):
-        from datetime import date as _date
-
-        user_id = str(uuid.uuid4())
-        today_str = _date.today().isoformat()
-        recompute_for_day(user_id, today_str, PUSH_DAY)  # tag: "push"
-
-        report = self.client.get(
-            "/api/v1/analytics/reports/?range=week", HTTP_AUTHORIZATION=f"Bearer {make_access_token(user_id)}"
-        )
-        tags = {entry["tag"] for entry in report.data["tagSplit"]}
-        self.assertIn("Push", tags)

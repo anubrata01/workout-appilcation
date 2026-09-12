@@ -51,7 +51,7 @@ export function ReminderSettings() {
         if (!token) {
           Alert.alert(
             "Notifications permission needed",
-            "Enable notifications for LOADED in your phone's settings to use reminders."
+            "Enable notifications for GetFit in your phone's settings to use reminders."
           );
           return;
         }
