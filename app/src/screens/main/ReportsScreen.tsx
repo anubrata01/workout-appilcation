@@ -6,6 +6,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useGetPRsQuery, useGetReportQuery, useGetStreakQuery } from "../../api/analyticsApi";
 import { ConsistencyStrip } from "../../components/analytics/ConsistencyStrip";
+import { ExerciseProgressSection } from "../../components/analytics/ExerciseProgressSection";
+import { NutritionReportCard } from "../../components/analytics/NutritionReportCard";
 import { StatTile } from "../../components/analytics/StatTile";
 import { StreakCard } from "../../components/analytics/StreakCard";
 import { ReportsScreenSkeleton } from "../../components/Skeleton";
@@ -105,10 +107,10 @@ export function ReportsScreen() {
                 Nothing here yet — reports update shortly after you log a completed set.
               </Text>
             ) : (
-              <Text style={styles.hint}>
-                Want to see how a specific lift is progressing? Tap any exercise on the PRs tab for its full
-                weight/rep history.
-              </Text>
+              <>
+                <ExerciseProgressSection />
+                <NutritionReportCard range={range} />
+              </>
             )}
           </>
         )}

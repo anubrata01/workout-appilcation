@@ -135,3 +135,25 @@ def test_water_defaults_to_zero_when_omitted():
     auth = f"Bearer {make_access_token(user_a)}"
     resp = client.put(f"/api/v1/nutrition/days/{TODAY}", json={"entries": []}, headers={"Authorization": auth})
     assert resp.json()["water_ml"] == 0
+
+
+def test_summary_is_zero_filled_and_reflects_logged_days():
+    user_a = str(uuid.uuid4())
+    auth = f"Bearer {make_access_token(user_a)}"
+    client.put(
+        f"/api/v1/nutrition/days/{TODAY}",
+        json={"water_ml": 500, "entries": [{"name": "Rice", "calories": 200}, {"name": "Chicken", "calories": 300}]},
+        headers={"Authorization": auth},
+    )
+
+    resp = client.get("/api/v1/nutrition/summary?range=week", headers={"Authorization": auth})
+    assert resp.status_code == 200
+    days = resp.json()
+    assert len(days) == 7  # zero-filled for the whole range, not just logged days
+
+    today_entry = next(d for d in days if d["date"] == TODAY)
+    assert today_entry["calories"] == 500  # 200 + 300 summed across entries
+    assert today_entry["water_ml"] == 500
+
+    other_days = [d for d in days if d["date"] != TODAY]
+    assert all(d["calories"] == 0 and d["water_ml"] == 0 for d in other_days)

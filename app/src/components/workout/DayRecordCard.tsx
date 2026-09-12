@@ -49,12 +49,12 @@ function Stat({ value, caption }: { value: string; caption: string }) {
 
 const styles = StyleSheet.create({
   card: {
-    flex: 1,
+    width: "100%",
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radii.lg,
-    padding: spacing.md,
+    padding: spacing.lg,
   },
   label: {
     fontFamily: fonts.bodySemiBold,

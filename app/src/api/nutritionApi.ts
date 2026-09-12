@@ -25,10 +25,16 @@ export interface NutritionDayDTO {
   entries: FoodEntryDTO[];
 }
 
+export interface NutritionSummaryDayDTO {
+  date: string;
+  calories: number;
+  water_ml: number;
+}
+
 export const nutritionApi = createApi({
   reducerPath: "nutritionApi",
   baseQuery: createServiceBaseQuery(NUTRITION_API_URL),
-  tagTypes: ["Day"],
+  tagTypes: ["Day", "Summary"],
   extractRehydrationInfo(action, { reducerPath }): any {
     if (action.type === REHYDRATE) {
       return (action as { payload?: Record<string, unknown> }).payload?.[reducerPath];
@@ -49,9 +55,13 @@ export const nutritionApi = createApi({
       { date: string; body: { water_ml: number; entries: Omit<FoodEntryDTO, "id">[] } }
     >({
       query: ({ date, body }) => ({ url: `/v1/nutrition/days/${date}`, method: "PUT", body }),
-      invalidatesTags: (_result, _error, { date }) => [{ type: "Day", id: date }],
+      invalidatesTags: (_result, _error, { date }) => [{ type: "Day", id: date }, "Summary"],
+    }),
+    getNutritionSummary: builder.query<NutritionSummaryDayDTO[], "week" | "month">({
+      query: (range) => `/v1/nutrition/summary?range=${range}`,
+      providesTags: ["Summary"],
     }),
   }),
 });
 
-export const { useGetNutritionDayQuery, useSaveNutritionDayMutation } = nutritionApi;
+export const { useGetNutritionDayQuery, useSaveNutritionDayMutation, useGetNutritionSummaryQuery } = nutritionApi;

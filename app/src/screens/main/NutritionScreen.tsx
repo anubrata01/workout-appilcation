@@ -74,8 +74,7 @@ export function NutritionScreen() {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entries, waterMl]);
+  }, [entries, waterMl, dateKey, saveDay]);
 
   function handleAdd(entry: NewFoodEntry) {
     setEntries((prev) => [...prev, { ...entry, id: nextLocalKey() }]);

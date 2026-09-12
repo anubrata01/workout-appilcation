@@ -1,7 +1,8 @@
 import React from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { CheckCircle2 } from "lucide-react-native";
 
+import type { ExerciseDTO } from "../../api/workoutApi";
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
 
 interface Props {
@@ -10,28 +11,52 @@ interface Props {
   sets: number;
   reps: number;
   calories: number;
-  exerciseCount: number;
+  exercises: ExerciseDTO[]; // the server's own response — proof it actually saved, not locally-computed numbers
   onClose: () => void;
 }
 
 // Shown once, right after a session is successfully saved — answers "how
-// long did I just work out" before dropping back to the idle Session tab.
-export function SessionSummaryModal({ visible, duration, sets, reps, calories, exerciseCount, onClose }: Props) {
+// long did I just work out" AND shows the actual persisted, read-only log
+// (straight from the server's response), not just aggregate stats. If this
+// is ever empty after a successful save, that's a real signal something's
+// wrong server-side, not just a UI gap.
+export function SessionSummaryModal({ visible, duration, sets, reps, calories, exercises, onClose }: Props) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.card}>
-          <CheckCircle2 size={40} color={colors.success} />
+          <CheckCircle2 size={36} color={colors.success} />
           <Text style={styles.title}>Workout complete</Text>
           <Text style={styles.duration}>{duration}</Text>
           <Text style={styles.durationLabel}>total time</Text>
 
           <View style={styles.statRow}>
-            <Stat label="Exercises" value={String(exerciseCount)} />
+            <Stat label="Exercises" value={String(exercises.length)} />
             <Stat label="Sets" value={String(sets)} />
             <Stat label="Reps" value={String(reps)} />
             <Stat label="Calories" value={String(calories)} />
           </View>
+
+          <Text style={styles.logLabel}>Saved log</Text>
+          <ScrollView style={styles.logScroll}>
+            {exercises.map((ex) => (
+              <View key={ex.id} style={styles.exerciseBlock}>
+                <Text style={styles.exerciseName}>
+                  {ex.name}
+                  {ex.category === "cardio" ? <Text style={styles.exerciseTag}>  cardio</Text> : null}
+                </Text>
+                {ex.sets.map((s, i) => (
+                  <Text key={i} style={styles.setLine}>
+                    Set {i + 1} —{" "}
+                    {ex.category === "cardio"
+                      ? `${s.duration_minutes}min · ${s.distance_km}km`
+                      : `${s.weight}kg × ${s.reps}`}
+                    {s.done ? " ✓" : ""}
+                  </Text>
+                ))}
+              </View>
+            ))}
+          </ScrollView>
 
           <Pressable style={styles.doneBtn} onPress={onClose}>
             <Text style={styles.doneBtnText}>Done</Text>
@@ -61,6 +86,7 @@ const styles = StyleSheet.create({
   },
   card: {
     width: "100%",
+    maxHeight: "85%",
     backgroundColor: colors.surfaceElevated,
     borderWidth: 1,
     borderColor: colors.border,
@@ -70,16 +96,16 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: fonts.display,
-    fontSize: 22,
+    fontSize: 20,
     letterSpacing: 1,
     color: colors.chalk,
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   duration: {
     fontFamily: fonts.dataBold,
-    fontSize: 40,
+    fontSize: 36,
     color: colors.accent,
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
   },
   durationLabel: {
     fontFamily: fonts.body,
@@ -90,12 +116,39 @@ const styles = StyleSheet.create({
   statRow: {
     flexDirection: "row",
     width: "100%",
-    marginTop: spacing.xl,
-    marginBottom: spacing.lg,
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
   },
   stat: { flex: 1, alignItems: "center" },
   statValue: { fontFamily: fonts.dataBold, fontSize: 17, color: colors.chalk },
   statLabel: { fontFamily: fonts.body, fontSize: 11, color: colors.muted, marginTop: 2 },
+  logLabel: {
+    alignSelf: "flex-start",
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10.5,
+    color: colors.muted,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginBottom: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  logScroll: {
+    width: "100%",
+    maxHeight: 220,
+    marginBottom: spacing.lg,
+  },
+  exerciseBlock: {
+    width: "100%",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  exerciseName: { fontFamily: fonts.bodyBold, fontSize: 13.5, color: colors.chalk, marginBottom: 2 },
+  exerciseTag: { fontFamily: fonts.data, fontSize: 9.5, color: colors.dim, textTransform: "uppercase" },
+  setLine: { fontFamily: fonts.data, fontSize: 11.5, color: colors.muted, marginTop: 2 },
   doneBtn: {
     width: "100%",
     backgroundColor: colors.accent,

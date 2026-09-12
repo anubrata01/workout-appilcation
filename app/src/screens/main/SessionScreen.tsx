@@ -13,6 +13,7 @@ import { ScreenBackground } from "../../components/ScreenBackground";
 import { SessionStatRow } from "../../components/workout/SessionStatRow";
 import { SessionSummaryModal } from "../../components/workout/SessionSummaryModal";
 import { useGetDayQuery, useGetExerciseLastSessionsQuery, useSaveDayMutation } from "../../api/workoutApi";
+import type { ExerciseDTO } from "../../api/workoutApi";
 import { dayOffset, estimateCalories, estimateCardioCalories, keyFor } from "../../lib/workoutHelpers";
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import {
@@ -59,7 +60,7 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
     sets: number;
     reps: number;
     calories: number;
-    exerciseCount: number;
+    exercises: ExerciseDTO[];
   } | null>(null);
 
   const todayKey = keyFor(new Date());
@@ -132,7 +133,7 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
       return;
     }
     try {
-      await saveDay({
+      const saved = await saveDay({
         date: keyFor(new Date()),
         body: {
           duration_seconds: elapsedSeconds,
@@ -141,12 +142,15 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
           exercises: exercises.map((e) => ({ name: e.name, category: e.category, sets: e.sets })),
         },
       }).unwrap();
+      // Show the server's own response, not locally-computed numbers — if
+      // this were ever empty after a "successful" save, that's proof of a
+      // real backend problem, not just a missing confirmation screen.
       setFinishedSummary({
         duration: formatDuration(elapsedSeconds),
         sets: totalSets,
         reps: totalReps,
         calories,
-        exerciseCount: exercises.length,
+        exercises: saved.exercises,
       });
       dispatch(sessionCleared());
     } catch {
@@ -190,7 +194,7 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
             sets={finishedSummary?.sets ?? 0}
             reps={finishedSummary?.reps ?? 0}
             calories={finishedSummary?.calories ?? 0}
-            exerciseCount={finishedSummary?.exerciseCount ?? 0}
+            exercises={finishedSummary?.exercises ?? []}
             onClose={() => setFinishedSummary(null)}
           />
         </SafeAreaView>
@@ -202,8 +206,9 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
     <ScreenBackground>
       <SafeAreaView style={styles.screen} edges={["top"]}>
         <View style={styles.header}>
-          <Pressable hitSlop={8} onPress={() => navigation.navigate("History")}>
-            <ChevronDown size={22} color={colors.chalk} />
+          <Pressable style={styles.exitBtn} onPress={() => navigation.navigate("Reports")} hitSlop={8}>
+            <ChevronDown size={18} color={colors.muted} />
+            <Text style={styles.exitBtnText}>Exit</Text>
           </Pressable>
           <Pressable style={styles.finishBtn} onPress={handleFinish}>
             <Text style={styles.finishBtnText}>Finish</Text>
@@ -286,6 +291,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   finishBtnText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.surface },
+  exitBtn: { flexDirection: "row", alignItems: "center", gap: 2 },
+  exitBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.muted },
   content: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxl },
   emptyState: {
     alignItems: "center",
@@ -346,7 +353,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   recordRow: {
-    flexDirection: "row",
+    flexDirection: "column",
     gap: spacing.sm + 2,
     marginTop: spacing.xxl,
   },

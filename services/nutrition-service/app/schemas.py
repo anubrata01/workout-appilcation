@@ -50,3 +50,9 @@ class NutritionDayOut(BaseModel):
     @classmethod
     def from_day(cls, day) -> "NutritionDayOut":
         return cls(date=day.date, water_ml=day.water_ml, entries=[FoodEntryOut.from_entry(e) for e in day.entries])
+
+
+class NutritionSummaryDay(BaseModel):
+    date: date_type
+    calories: int
+    water_ml: int
