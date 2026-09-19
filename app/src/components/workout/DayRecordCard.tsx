@@ -3,7 +3,7 @@ import { ChevronRight } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { ExerciseDTO, WorkoutDayDTO } from "../../api/workoutApi";
-import { dayCalories } from "../../lib/workoutHelpers";
+import { dayCalories, formatClockTime, formatDurationSummary } from "../../lib/workoutHelpers";
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
 
 interface Props {
@@ -37,7 +37,11 @@ export function DayRecordCard({ label, day, isLoading, onPress }: Props) {
   const hasData = !isLoading && !!day && day.exercises.length > 0;
   const calories = hasData ? dayCalories(day) : 0;
   const durationLabel =
-    hasData && day?.duration_seconds != null ? `${Math.round(day.duration_seconds / 60)}m` : "0m";
+    hasData && day?.duration_seconds != null ? formatDurationSummary(day.duration_seconds) : "0m";
+  const timeRange =
+    hasData && day?.started_at && day?.finished_at
+      ? `${formatClockTime(day.started_at)} – ${formatClockTime(day.finished_at)}`
+      : null;
   const shown = hasData ? day!.exercises.slice(0, MAX_EXERCISES_SHOWN) : [];
   const remaining = hasData ? day!.exercises.length - shown.length : 0;
 
@@ -54,6 +58,7 @@ export function DayRecordCard({ label, day, isLoading, onPress }: Props) {
           </View>
         ) : null}
       </View>
+      {timeRange ? <Text style={styles.timeRange}>{timeRange}</Text> : null}
       {isLoading ? (
         <Text style={styles.empty}>…</Text>
       ) : !hasData ? (
@@ -99,6 +104,7 @@ const styles = StyleSheet.create({
   },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 2 },
   headerMeta: { fontFamily: fonts.data, fontSize: 10.5, color: colors.dim },
+  timeRange: { fontFamily: fonts.data, fontSize: 10.5, color: colors.faint, marginBottom: 4 },
   empty: {
     fontFamily: fonts.body,
     fontSize: 12,

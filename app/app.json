@@ -37,6 +37,7 @@
         }
       ],
       "@react-native-google-signin/google-signin",
+      "@notifee/react-native",
       [
         "expo-splash-screen",
         {

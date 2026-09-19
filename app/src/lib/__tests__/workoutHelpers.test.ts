@@ -5,7 +5,10 @@ import {
   dayVolume,
   estimateCalories,
   estimateCardioCalories,
+  formatClockTime,
   formatDateHeader,
+  formatDurationSummary,
+  formatElapsedClock,
   keyFor,
   parseLocalDate,
 } from "../workoutHelpers";
@@ -129,6 +132,51 @@ describe("dayVolume / dayCalories", () => {
     };
     const expected = estimateCalories(480) + estimateCardioCalories(20);
     expect(dayCalories(day)).toBe(expected);
+  });
+});
+
+describe("formatElapsedClock", () => {
+  it("MM:SS under an hour", () => {
+    expect(formatElapsedClock(0)).toBe("00:00");
+    expect(formatElapsedClock(65)).toBe("01:05");
+    expect(formatElapsedClock(3599)).toBe("59:59");
+  });
+
+  it("switches to H:MM:SS at exactly one hour, instead of rolling minutes past 59", () => {
+    expect(formatElapsedClock(3600)).toBe("1:00:00");
+    expect(formatElapsedClock(3600 + 90 * 60 + 5)).toBe("2:30:05"); // 2h 30m 5s
+  });
+
+  it("never goes negative for a clock that hasn't started ticking yet", () => {
+    expect(formatElapsedClock(-5)).toBe("00:00");
+  });
+});
+
+describe("formatDurationSummary", () => {
+  it("shows minutes only under an hour", () => {
+    expect(formatDurationSummary(0)).toBe("0m");
+    expect(formatDurationSummary(42 * 60)).toBe("42m");
+  });
+
+  it("switches to hours+minutes at/over an hour, dropping the minutes part when it's exactly on the hour", () => {
+    expect(formatDurationSummary(60 * 60)).toBe("1h");
+    expect(formatDurationSummary(75 * 60)).toBe("1h 15m"); // e.g. two summed sessions, 30m + 45m
+    expect(formatDurationSummary(125 * 60)).toBe("2h 5m");
+  });
+
+  it("rounds to the nearest minute rather than truncating", () => {
+    expect(formatDurationSummary(89)).toBe("1m"); // 1m29s rounds up, not down to 1m flat by truncation coincidence
+    expect(formatDurationSummary(150)).toBe("3m"); // 2m30s rounds up to 3m
+  });
+});
+
+describe("formatClockTime", () => {
+  it("formats a full ISO timestamp as a local wall-clock time", () => {
+    // 18:00 local time, regardless of what UTC offset the runner is in —
+    // constructing from local components (not an ISO string with a Z
+    // suffix) keeps this test independent of the machine's own timezone.
+    const sixPm = new Date(2026, 8, 16, 18, 0).toISOString();
+    expect(formatClockTime(sixPm)).toMatch(/6:00\s*PM/i);
   });
 });
 

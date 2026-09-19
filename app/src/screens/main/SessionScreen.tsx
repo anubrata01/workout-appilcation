@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { ChevronDown, Dumbbell, Plus } from "lucide-react-native";
+import { ChevronDown, Dumbbell, Plus, Timer } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { DayRecordCard } from "../../components/workout/DayRecordCard";
@@ -14,7 +14,13 @@ import { SessionStatRow } from "../../components/workout/SessionStatRow";
 import { SessionSummaryModal } from "../../components/workout/SessionSummaryModal";
 import { useGetDayQuery, useGetExerciseLastSessionsQuery, useSaveDayMutation, workoutApi } from "../../api/workoutApi";
 import type { ExerciseDTO } from "../../api/workoutApi";
-import { dayOffset, estimateCalories, estimateCardioCalories, keyFor } from "../../lib/workoutHelpers";
+import {
+  dayOffset,
+  estimateCalories,
+  estimateCardioCalories,
+  formatElapsedClock,
+  keyFor,
+} from "../../lib/workoutHelpers";
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import {
   exerciseAdded,
@@ -26,13 +32,8 @@ import {
   setUpdated,
 } from "../../store/activeSessionSlice";
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
+import { hideWorkoutTimerNotification, showWorkoutTimerNotification } from "../../lib/workoutNotification";
 import type { MainTabScreenProps } from "../../navigation/types";
-
-function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-}
 
 let localKeyCounter = 0;
 function nextLocalKey() {
@@ -58,6 +59,8 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
   const [restTarget, setRestTarget] = useState<RestTarget | null>(null);
   const [finishedSummary, setFinishedSummary] = useState<{
     duration: string;
+    startedAt: string | null;
+    finishedAt: string;
     sets: number;
     reps: number;
     calories: number;
@@ -79,9 +82,24 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
     return () => clearInterval(interval);
   }, [status, startedAt]);
 
+  // Android lock-screen/notification-shade timer, kept in sync with the
+  // session's own lifecycle rather than the ticking clock above — it's
+  // driven natively once posted (see workoutNotification.ts), so this only
+  // needs to fire on start/stop, not every second. Also covers relaunching
+  // the app mid-session (status is already "active" from persisted state on
+  // first mount), which re-posts the same notification id idempotently.
+  useEffect(() => {
+    if (status === "active" && startedAt) {
+      showWorkoutTimerNotification(startedAt);
+    } else {
+      hideWorkoutTimerNotification();
+    }
+  }, [status, startedAt]);
+
   const exerciseNames = exercises.map((e) => e.name);
   const { data: lastSessions = {} } = useGetExerciseLastSessionsQuery(exerciseNames, {
     skip: status !== "active" || exerciseNames.length === 0,
+    refetchOnMountOrArgChange: true,
   });
 
   const totalSets = exercises.reduce((sum, e) => sum + e.sets.length, 0);
@@ -141,13 +159,15 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
     if (isFinishing) return;
     setIsFinishing(true);
     const finishDate = keyFor(new Date());
+    const startedAtIso = startedAt ? new Date(startedAt).toISOString() : null;
+    const finishedAtIso = new Date().toISOString();
     try {
       const saved = await saveDay({
         date: finishDate,
         body: {
           duration_seconds: elapsedSeconds,
-          started_at: startedAt ? new Date(startedAt).toISOString() : null,
-          finished_at: new Date().toISOString(),
+          started_at: startedAtIso,
+          finished_at: finishedAtIso,
           exercises: exercises.map((e) => ({ name: e.name, category: e.category, sets: e.sets })),
         },
       }).unwrap();
@@ -163,7 +183,9 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
       // this were ever empty after a "successful" save, that's proof of a
       // real backend problem, not just a missing confirmation screen.
       setFinishedSummary({
-        duration: formatDuration(elapsedSeconds),
+        duration: formatElapsedClock(elapsedSeconds),
+        startedAt: startedAtIso,
+        finishedAt: finishedAtIso,
         sets: totalSets,
         reps: totalReps,
         calories,
@@ -220,6 +242,8 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
           <SessionSummaryModal
             visible={!!finishedSummary}
             duration={finishedSummary?.duration ?? "00:00"}
+            startedAt={finishedSummary?.startedAt ?? null}
+            finishedAt={finishedSummary?.finishedAt ?? null}
             sets={finishedSummary?.sets ?? 0}
             reps={finishedSummary?.reps ?? 0}
             calories={finishedSummary?.calories ?? 0}
@@ -235,17 +259,26 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
     <ScreenBackground>
       <SafeAreaView style={styles.screen} edges={["top"]}>
         <View style={styles.header}>
-          <Pressable style={styles.exitBtn} onPress={confirmDiscard} hitSlop={8}>
-            <ChevronDown size={18} color={colors.muted} />
-            <Text style={styles.exitBtnText}>Exit</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.finishBtn, isFinishing && styles.finishBtnDisabled]}
-            onPress={handleFinish}
-            disabled={isFinishing}
-          >
-            <Text style={styles.finishBtnText}>{isFinishing ? "Saving…" : "Finish"}</Text>
-          </Pressable>
+          {/* Lives outside the ScrollView below, in the header — stays put
+              when you scroll, instead of the timer disappearing along with
+              the rest of the stat row. */}
+          <View style={styles.timerPill}>
+            <Timer size={14} color={colors.accentWarm} />
+            <Text style={styles.timerPillText}>{formatElapsedClock(elapsedSeconds)}</Text>
+          </View>
+          <View style={styles.headerActions}>
+            <Pressable style={styles.exitBtn} onPress={confirmDiscard} hitSlop={8}>
+              <ChevronDown size={18} color={colors.muted} />
+              <Text style={styles.exitBtnText}>Exit</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.finishBtn, isFinishing && styles.finishBtnDisabled]}
+              onPress={handleFinish}
+              disabled={isFinishing}
+            >
+              <Text style={styles.finishBtnText}>{isFinishing ? "Saving…" : "Finish"}</Text>
+            </Pressable>
+          </View>
         </View>
 
         <KeyboardAvoidingView
@@ -255,7 +288,7 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
         >
           <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
             <SessionStatRow
-              duration={formatDuration(elapsedSeconds)}
+              duration={formatElapsedClock(elapsedSeconds)}
               sets={totalSets}
               reps={totalReps}
               calories={calories}
@@ -311,13 +344,25 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   header: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
     alignItems: "center",
-    gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.sm,
   },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  timerPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.track,
+    borderWidth: 1,
+    borderColor: colors.accentWarm,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+  },
+  timerPillText: { fontFamily: fonts.dataBold, fontSize: 14, color: colors.chalk, fontVariant: ["tabular-nums"] },
   finishBtn: {
     backgroundColor: colors.success,
     borderRadius: radii.pill,

@@ -149,6 +149,38 @@ describe("workoutApi caching", () => {
     // queued off the back of the error.
     expect(global.fetch).toHaveBeenCalledTimes(1); // only the one failed PUT, nothing else triggered
   });
+
+  it("saveDay invalidates getExerciseLastSessions — this endpoint had no tags at all before, so the Add Exercise picker kept showing whatever it first cached for the rest of the app session", async () => {
+    const beforeSave: Record<string, unknown> = { "Bench Press": null }; // no history yet
+    const afterSave: Record<string, unknown> = {
+      "Bench Press": { date: "2026-09-16", sets: [{ weight: 60, reps: 8, done: true }] },
+    };
+    global.fetch = jest
+      .fn()
+      .mockReturnValueOnce(jsonResponse(beforeSave)) // getExerciseLastSessions, first open
+      .mockReturnValueOnce(jsonResponse({ ...emptyDay("2026-09-16"), exercises: [] })) // saveDay PUT
+      .mockReturnValueOnce(jsonResponse(afterSave)); // getExerciseLastSessions, reopened after Finish
+
+    await store.dispatch(workoutApi.endpoints.getExerciseLastSessions.initiate(["Bench Press"]));
+    expect(workoutApi.endpoints.getExerciseLastSessions.select(["Bench Press"])(store.getState()).data).toEqual(
+      beforeSave
+    );
+
+    await store.dispatch(
+      workoutApi.endpoints.saveDay.initiate({
+        date: "2026-09-16",
+        body: { duration_seconds: 1800, started_at: null, finished_at: null, exercises: [] },
+      })
+    );
+
+    // Re-opening the picker re-subscribes with the same arg — with the tag
+    // wired up this refetches instead of serving the stale "no history" copy.
+    await store.dispatch(workoutApi.endpoints.getExerciseLastSessions.initiate(["Bench Press"]));
+    expect(workoutApi.endpoints.getExerciseLastSessions.select(["Bench Press"])(store.getState()).data).toEqual(
+      afterSave
+    );
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe("nutritionApi caching", () => {

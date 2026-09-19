@@ -57,8 +57,12 @@ export function ExercisePicker({ visible, onPick, onClose }: Props) {
   );
   const [addCustomExercise, { isLoading: addingCustom }] = useAddCustomExerciseMutation();
 
-  // "my record" — Analytics Service's best-ever per exercise.
-  const { data: prs = [] } = useGetPRsQuery(undefined, { skip: !visible });
+  // "my record" — Analytics Service's best-ever per exercise. PRs are
+  // computed by a separate async pipeline (Redis -> analytics-service), not
+  // something this app can tag-invalidate directly, so refetch on every open
+  // instead of trusting whatever was cached the first time the picker was
+  // ever shown this session (which could be well before your last Finish).
+  const { data: prs = [] } = useGetPRsQuery(undefined, { skip: !visible, refetchOnMountOrArgChange: true });
   const prByName = useMemo(() => {
     const map = new Map<string, PersonalRecordDTO>();
     for (const pr of prs) map.set(pr.name, pr);
@@ -68,10 +72,12 @@ export function ExercisePicker({ visible, onPick, onClose }: Props) {
   // "the entire set history of previous day" — Workout Service's raw log,
   // bulk-fetched for exactly what's currently visible/filtered. A name with
   // no real history comes back null and nothing renders for it — this is
-  // never fabricated from the library item alone.
+  // never fabricated from the library item alone. Same refetch-on-open
+  // reasoning as PRs above, on top of the saveDay tag invalidation.
   const visibleNames = useMemo(() => results.map((r) => r.name), [results]);
   const { data: lastSessions = {} } = useGetExerciseLastSessionsQuery(visibleNames, {
     skip: !visible || visibleNames.length === 0,
+    refetchOnMountOrArgChange: true,
   });
 
   async function handleAddCustom() {

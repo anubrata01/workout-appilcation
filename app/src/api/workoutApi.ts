@@ -61,7 +61,7 @@ export interface LastSessionDTO {
 export const workoutApi = createApi({
   reducerPath: "workoutApi",
   baseQuery: createServiceBaseQuery(WORKOUT_API_URL),
-  tagTypes: ["Day", "Library"],
+  tagTypes: ["Day", "Library", "LastSession"],
   // Lets rehydrated cache from AsyncStorage (see store/index.ts) populate
   // this slice's query cache on launch, instead of every query starting empty
   // and refetching.
@@ -89,7 +89,11 @@ export const workoutApi = createApi({
       }
     >({
       query: ({ date, body }) => ({ url: `/v1/workouts/days/${date}/`, method: "PUT", body }),
-      invalidatesTags: (_result, error, { date }) => (error ? [] : [{ type: "Day", id: date }]),
+      // Also invalidates every cached "last session" lookup — this endpoint
+      // had no tags at all before, so the Add Exercise picker kept showing
+      // whatever it first cached (stale "last time"/no-history) for the rest
+      // of the app session, never reflecting what you'd just Finished.
+      invalidatesTags: (_result, error, { date }) => (error ? [] : [{ type: "Day", id: date }, "LastSession"]),
     }),
     searchLibrary: builder.query<LibraryItemDTO[], { search?: string; category?: ExerciseCategory }>({
       query: ({ search, category }) => {
@@ -111,6 +115,7 @@ export const workoutApi = createApi({
     // real past log.
     getExerciseLastSessions: builder.query<Record<string, LastSessionDTO | null>, string[]>({
       query: (names) => ({ url: "/v1/workouts/exercises/last-sessions/", method: "POST", body: { names } }),
+      providesTags: ["LastSession"],
     }),
   }),
 });

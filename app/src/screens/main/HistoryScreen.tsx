@@ -5,7 +5,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useGetDayQuery } from "../../api/workoutApi";
 import { ScreenBackground } from "../../components/ScreenBackground";
-import { dayCalories, dayOffset, formatDateHeader, keyFor } from "../../lib/workoutHelpers";
+import {
+  dayCalories,
+  dayOffset,
+  formatClockTime,
+  formatDateHeader,
+  formatDurationSummary,
+  keyFor,
+} from "../../lib/workoutHelpers";
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
 import type { MainStackScreenProps } from "../../navigation/types";
 
@@ -62,10 +69,18 @@ export function HistoryScreen({ navigation, route }: MainStackScreenProps<"Histo
           ) : (
             <>
               <View style={styles.summaryRow}>
-                <SummaryStat label="Duration" value={data.duration_seconds != null ? `${Math.round(data.duration_seconds / 60)}m` : "0m"} />
+                <SummaryStat
+                  label="Duration"
+                  value={data.duration_seconds != null ? formatDurationSummary(data.duration_seconds) : "0m"}
+                />
                 <SummaryStat label="Sets" value={String(totalSets)} />
                 <SummaryStat label="Calories" value={String(calories)} />
               </View>
+              {data.started_at && data.finished_at ? (
+                <Text style={styles.timeRange}>
+                  Started {formatClockTime(data.started_at)} · Finished {formatClockTime(data.finished_at)}
+                </Text>
+              ) : null}
               {data.exercises.map((ex) => (
                 <View key={ex.id} style={styles.exerciseCard}>
                   <Text style={styles.exerciseName}>
@@ -153,6 +168,14 @@ const styles = StyleSheet.create({
   summaryStat: { flex: 1, alignItems: "center" },
   summaryLabel: { fontFamily: fonts.body, fontSize: 11, color: colors.muted, marginBottom: 4 },
   summaryValue: { fontFamily: fonts.dataBold, fontSize: 15, color: colors.chalk },
+  timeRange: {
+    fontFamily: fonts.data,
+    fontSize: 11.5,
+    color: colors.dim,
+    textAlign: "center",
+    marginTop: -spacing.sm,
+    marginBottom: spacing.lg,
+  },
   exerciseCard: {
     backgroundColor: colors.surface,
     borderWidth: 1,

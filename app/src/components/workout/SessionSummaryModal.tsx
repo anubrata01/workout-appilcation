@@ -3,11 +3,14 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-nati
 import { CheckCircle2 } from "lucide-react-native";
 
 import type { ExerciseDTO } from "../../api/workoutApi";
+import { formatClockTime } from "../../lib/workoutHelpers";
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
 
 interface Props {
   visible: boolean;
   duration: string; // pre-formatted, e.g. "32:07"
+  startedAt: string | null; // full ISO timestamp
+  finishedAt: string | null;
   sets: number;
   reps: number;
   calories: number;
@@ -20,7 +23,17 @@ interface Props {
 // (straight from the server's response), not just aggregate stats. If this
 // is ever empty after a successful save, that's a real signal something's
 // wrong server-side, not just a UI gap.
-export function SessionSummaryModal({ visible, duration, sets, reps, calories, exercises, onClose }: Props) {
+export function SessionSummaryModal({
+  visible,
+  duration,
+  startedAt,
+  finishedAt,
+  sets,
+  reps,
+  calories,
+  exercises,
+  onClose,
+}: Props) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
@@ -29,6 +42,11 @@ export function SessionSummaryModal({ visible, duration, sets, reps, calories, e
           <Text style={styles.title}>Workout complete</Text>
           <Text style={styles.duration}>{duration}</Text>
           <Text style={styles.durationLabel}>total time</Text>
+          {startedAt && finishedAt ? (
+            <Text style={styles.timeRange}>
+              {formatClockTime(startedAt)} – {formatClockTime(finishedAt)}
+            </Text>
+          ) : null}
 
           <View style={styles.statRow}>
             <Stat label="Exercises" value={String(exercises.length)} />
@@ -112,6 +130,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.muted,
     marginTop: 2,
+  },
+  timeRange: {
+    fontFamily: fonts.data,
+    fontSize: 11.5,
+    color: colors.dim,
+    marginTop: 4,
   },
   statRow: {
     flexDirection: "row",

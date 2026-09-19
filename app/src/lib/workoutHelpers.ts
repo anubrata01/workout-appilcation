@@ -83,6 +83,54 @@ export function dayCalories(day: CalorieSource | null | undefined): number {
   return estimateCalories(dayVolume(day)) + estimateCardioCalories(cardioMinutes);
 }
 
+/**
+ * The actively-ticking session clock — seconds-precision, since that's
+ * meaningful while it's actually counting up in front of you. MM:SS under
+ * an hour; once it crosses an hour it switches to H:MM:SS rather than
+ * rolling minutes past 59, the same way any stopwatch does.
+ */
+export function formatElapsedClock(totalSeconds: number): string {
+  const clamped = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(clamped / 3600);
+  const minutes = Math.floor((clamped % 3600) / 60);
+  const seconds = clamped % 60;
+  const mm = String(minutes).padStart(2, "0");
+  const ss = String(seconds).padStart(2, "0");
+  return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+/**
+ * A finished/stored duration shown as a summary, not a live clock — no
+ * seconds precision needed here. "42m" under an hour, "1h 15m" (or just
+ * "1h" exactly on the hour) at or over one, instead of duration always
+ * being squeezed into a single minutes number once a session (or a day's
+ * summed multi-session total) runs long.
+ */
+export function formatDurationSummary(totalSeconds: number): string {
+  const totalMinutes = Math.round(Math.max(0, totalSeconds) / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${minutes}m`;
+  if (minutes === 0) return `${hours}h`;
+  return `${hours}h ${minutes}m`;
+}
+
+/** A local wall-clock time from a full ISO timestamp (not a bare date), e.g.
+ * "6:00 PM" — for showing when a session actually started/finished, not just
+ * how long it took. Unlike keyFor/parseLocalDate above, a full ISO
+ * timestamp already carries an explicit UTC offset, so `new Date(iso)`
+ * parses it unambiguously; the local-vs-UTC trap those two guard against
+ * only applies to bare "YYYY-MM-DD" strings. */
+export function formatClockTime(iso: string): string {
+  // Pinned to "en-US" deliberately, not the device's own locale (`[]`) — the
+  // rest of the app's numbers (reps, weights, durations) are always plain
+  // Western digits, and on a device set to a locale with its own numeral
+  // system (Bengali, Arabic-indic, etc.) an unpinned toLocaleTimeString
+  // would render this one value in different digits than everything next to
+  // it. The 12-hour AM/PM shape stays regardless of the pinned locale.
+  return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+
 // A small fixed set of accent-ish colors to cycle through deterministically —
 // no longer tag-derived, just enough variety for a PR card's accent dot.
 const NAME_ACCENT_PALETTE = ["#FF4519", "#FF6B4A", "#1E9E70", "#B8791A", "#7C6FE0", "#3B9FD9"];
