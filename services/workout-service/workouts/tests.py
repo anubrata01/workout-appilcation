@@ -87,6 +87,28 @@ class WorkoutDayIsolationTests(APITestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertFalse(WorkoutDay.objects.filter(date=TOMORROW).exists())
 
+    def test_single_session_with_multiple_distinct_exercises_all_saved(self):
+        """One Finish can log more than one exercise in the same PUT (this is
+        the normal case -- add two exercises to the active session, then hit
+        Finish once) -- all of them must come back, not just the first."""
+        payload = {
+            "duration_seconds": 1800,
+            "exercises": [
+                {"name": "Squat", "sets": [{"weight": 80, "reps": 5, "done": True}]},
+                {"name": "Bench Press", "sets": [{"weight": 60, "reps": 8, "done": True}]},
+                {"name": "Pull-Up", "sets": [{"weight": 0, "reps": 10, "done": True}]},
+            ],
+        }
+        put = self.client.put(f"/api/v1/workouts/days/{TODAY}/", payload, format="json", HTTP_AUTHORIZATION=self.auth_a)
+        self.assertEqual(put.status_code, 200)
+        names = [ex["name"] for ex in put.data["exercises"]]
+        self.assertEqual(names, ["Squat", "Bench Press", "Pull-Up"])
+
+        get = self.client.get(f"/api/v1/workouts/days/{TODAY}/", HTTP_AUTHORIZATION=self.auth_a)
+        self.assertEqual(get.status_code, 200)
+        get_names = [ex["name"] for ex in get.data["exercises"]]
+        self.assertEqual(get_names, ["Squat", "Bench Press", "Pull-Up"])
+
     def test_second_session_same_day_appends_and_accumulates_duration(self):
         """The bug this fixes: a second Finish the same day used to silently
         wipe the first session's exercises. Now both are kept, and their

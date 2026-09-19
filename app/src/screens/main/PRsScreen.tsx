@@ -31,14 +31,14 @@ export function PRsScreen() {
         <Text style={styles.sectionLabel}>Personal records</Text>
 
         {error ? (
-          <Text style={styles.errorText}>Couldn't load PRs — pull to retry.</Text>
+          <Text style={styles.errorText}>Couldn't load PRs. Pull to retry.</Text>
         ) : isLoading ? (
           <PRsScreenSkeleton />
         ) : !data || data.length === 0 ? (
           <View style={styles.emptyState}>
             <Trophy size={22} color={colors.faint} />
             <Text style={styles.emptyText}>
-              No PRs yet — mark a set "done" in the Session tab to set your first one.
+              No PRs yet. Mark a set "done" in the Session tab to set your first one.
             </Text>
           </View>
         ) : (

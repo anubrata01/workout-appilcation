@@ -10,9 +10,10 @@ import { FoodEntryCard } from "../../components/nutrition/FoodEntryCard";
 import { NutritionSummaryRow } from "../../components/nutrition/NutritionSummaryRow";
 import { WaterTracker } from "../../components/nutrition/WaterTracker";
 import { ScreenBackground } from "../../components/ScreenBackground";
-import { useGetNutritionDayQuery, useSaveNutritionDayMutation } from "../../api/nutritionApi";
+import { nutritionApi, useGetNutritionDayQuery, useSaveNutritionDayMutation } from "../../api/nutritionApi";
 import type { FoodEntryDTO } from "../../api/nutritionApi";
 import { dayOffset, formatDateHeader, keyFor } from "../../lib/workoutHelpers";
+import { useAppDispatch } from "../../store/hooks";
 import { colors, fonts, spacing } from "../../theme/tokens";
 
 let localKeyCounter = 0;
@@ -33,6 +34,7 @@ export function NutritionScreen() {
   const { day: dayName, date: dateLabel } = formatDateHeader(activeDate);
   const isToday = cursor >= 0;
 
+  const dispatch = useAppDispatch();
   const { data, isLoading } = useGetNutritionDayQuery(dateKey);
   const [saveDay] = useSaveNutritionDayMutation();
   const [entries, setEntries] = useState<FoodEntryDTO[]>([]);
@@ -43,6 +45,13 @@ export function NutritionScreen() {
   const initializedDateRef = useRef<string | null>(null);
   const skipNextSaveRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The latest not-yet-sent save for whichever date scheduled it — read (and
+  // sent immediately) by the flush effect below whenever you navigate away
+  // from that date before the debounce timer got to fire on its own.
+  const pendingSaveRef = useRef<{
+    date: string;
+    body: { water_ml: number; weight_kg: number | null; entries: Omit<FoodEntryDTO, "id">[] };
+  } | null>(null);
 
   // Same "local state is the source of truth, re-hydrate only on a real date
   // change" pattern as the old Log screen used — see its comments for why
@@ -62,27 +71,53 @@ export function NutritionScreen() {
     setWeightKg(data?.weight_kg ?? null);
   }, [dateKey, data, isLoading]);
 
+  function flushPendingSave() {
+    const pending = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (!pending) return;
+    saveDay(pending)
+      .unwrap()
+      .then((saved) => {
+        // Write the server's own response straight into the cache for that
+        // date instead of waiting on the invalidated tag's background
+        // refetch — if you navigate back to this date quickly, the
+        // background refetch might not have landed yet and the hydrate
+        // effect would otherwise show what was cached before this save.
+        return dispatch(nutritionApi.util.upsertQueryData("getNutritionDay", pending.date, saved));
+      })
+      .catch(() => {
+        Alert.alert("Couldn't save", "Your nutrition log didn't save. Check your connection and try again.");
+      });
+  }
+
+  // Schedules the debounced save for the current date and keeps
+  // pendingSaveRef pointing at the latest snapshot to send.
   useEffect(() => {
     if (initializedDateRef.current !== dateKey) return;
     if (skipNextSaveRef.current) {
       skipNextSaveRef.current = false;
       return;
     }
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      saveDay({
-        date: dateKey,
-        body: { water_ml: waterMl, weight_kg: weightKg, entries: entries.map(({ id, ...rest }) => rest) },
-      })
-        .unwrap()
-        .catch(() => {
-          Alert.alert("Couldn't save", "Your nutrition log didn't save — check your connection and try again.");
-        });
-    }, SAVE_DEBOUNCE_MS);
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    pendingSaveRef.current = {
+      date: dateKey,
+      body: { water_ml: waterMl, weight_kg: weightKg, entries: entries.map(({ id, ...rest }) => rest) },
     };
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(flushPendingSave, SAVE_DEBOUNCE_MS);
   }, [entries, waterMl, weightKg, dateKey, saveDay]);
+
+  // Flushes a still-pending save the instant you leave the date that
+  // scheduled it (arrow nav to another date, or leaving the screen/tab
+  // entirely) instead of just cancelling it and silently losing the edit —
+  // that was the actual bug: switching dates within the debounce window
+  // discarded whatever you'd just added.
+  useEffect(() => {
+    return () => flushPendingSave();
+  }, [dateKey, saveDay]);
 
   function handleAdd(entry: NewFoodEntry) {
     setEntries((prev) => [...prev, { ...entry, id: nextLocalKey() }]);
@@ -138,7 +173,7 @@ export function NutritionScreen() {
           {entries.length === 0 ? (
             <View style={styles.emptyState}>
               <Utensils size={22} color={colors.faint} />
-              <Text style={styles.emptyText}>Nothing logged yet — add what you ate today.</Text>
+              <Text style={styles.emptyText}>Nothing logged yet. Add what you ate today.</Text>
             </View>
           ) : (
             entries.map((entry) => (

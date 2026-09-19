@@ -37,7 +37,7 @@ export function DayRecordCard({ label, day, isLoading, onPress }: Props) {
   const hasData = !isLoading && !!day && day.exercises.length > 0;
   const calories = hasData ? dayCalories(day) : 0;
   const durationLabel =
-    hasData && day?.duration_seconds != null ? `${Math.round(day.duration_seconds / 60)}m` : "—";
+    hasData && day?.duration_seconds != null ? `${Math.round(day.duration_seconds / 60)}m` : "0m";
   const shown = hasData ? day!.exercises.slice(0, MAX_EXERCISES_SHOWN) : [];
   const remaining = hasData ? day!.exercises.length - shown.length : 0;
 

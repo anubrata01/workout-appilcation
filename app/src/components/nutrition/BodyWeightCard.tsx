@@ -47,7 +47,7 @@ export function BodyWeightCard({ weightKg, onChange }: Props) {
           value={text}
           onChangeText={setText}
           onEndEditing={(e) => commit(e.nativeEvent.text)}
-          placeholder="—"
+          placeholder="Log"
           placeholderTextColor={colors.dim}
           keyboardType="decimal-pad"
           style={styles.input}

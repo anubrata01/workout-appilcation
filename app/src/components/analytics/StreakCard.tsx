@@ -28,7 +28,7 @@ export function StreakCard({ currentStreak, longestStreak }: Props) {
           {currentStreak} {currentStreak === 1 ? "day" : "days"}
         </Text>
         <Text style={styles.caption}>
-          {isActive ? "current streak" : "no active streak — log a session to start one"}
+          {isActive ? "current streak" : "no active streak. Log a session to start one"}
         </Text>
       </View>
       {longestStreak > currentStreak ? (

@@ -49,7 +49,7 @@ export function LoginScreen({ navigation }: AuthStackScreenProps<"Login">) {
           <TextField label="Password" value={password} onChangeText={setPassword} secureTextEntry />
 
           {invalidCredentials ? <Text style={styles.error}>{invalidCredentials}</Text> : null}
-          {formError ? <Text style={styles.error}>Something went wrong — try again.</Text> : null}
+          {formError ? <Text style={styles.error}>Something went wrong. Try again.</Text> : null}
 
           <PrimaryButton label="Log in" onPress={handleSubmit} loading={isLoading} />
 

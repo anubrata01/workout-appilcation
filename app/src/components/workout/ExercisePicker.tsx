@@ -128,7 +128,7 @@ export function ExercisePicker({ visible, onPick, onClose }: Props) {
             keyExtractor={(item) => item.id}
             style={{ maxHeight: 360 }}
             ListEmptyComponent={
-              !isFetching ? <Text style={styles.emptyText}>No matches — add it as custom above.</Text> : null
+              !isFetching ? <Text style={styles.emptyText}>No matches. Add it as custom above.</Text> : null
             }
             renderItem={({ item }) => {
               const pr = prByName.get(item.name);

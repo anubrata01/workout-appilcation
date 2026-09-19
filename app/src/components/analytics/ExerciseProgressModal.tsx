@@ -36,7 +36,7 @@ export function ExerciseProgressModal({ exerciseName, onClose }: Props) {
     const repsPart = repsDelta !== 0 ? `${first.reps} → ${last.reps} reps` : `${last.reps} reps`;
     try {
       await Share.share({
-        message: `${exerciseName}: ${weightPart}, ${repsPart} over ${points.length} sessions — tracked with GetFit 💪`,
+        message: `${exerciseName}: ${weightPart}, ${repsPart} over ${points.length} sessions. Tracked with GetFit 💪`,
       });
     } catch {
       // User cancelled the share sheet — nothing to handle.

@@ -84,7 +84,7 @@ export function ReportsScreen() {
         {streak ? <StreakCard currentStreak={streak.currentStreak} longestStreak={streak.longestStreak} /> : null}
 
         {error ? (
-          <Text style={styles.errorText}>Couldn't load reports — pull to retry.</Text>
+          <Text style={styles.errorText}>Couldn't load reports. Pull to retry.</Text>
         ) : isLoading ? (
           <ReportsScreenSkeleton />
         ) : (
@@ -104,7 +104,7 @@ export function ReportsScreen() {
 
             {sessions === 0 ? (
               <Text style={styles.hint}>
-                Nothing here yet — reports update shortly after you log a completed set.
+                Nothing here yet. Reports update shortly after you log a completed set.
               </Text>
             ) : (
               <>

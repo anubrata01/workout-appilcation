@@ -47,7 +47,7 @@ export function SessionSummaryModal({ visible, duration, sets, reps, calories, e
                 </Text>
                 {ex.sets.map((s, i) => (
                   <Text key={i} style={styles.setLine}>
-                    Set {i + 1} —{" "}
+                    Set {i + 1}:{" "}
                     {ex.category === "cardio"
                       ? `${s.duration_minutes}min · ${s.distance_km}km`
                       : `${s.weight}kg × ${s.reps}`}

@@ -62,7 +62,7 @@ export function HistoryScreen({ navigation, route }: MainStackScreenProps<"Histo
           ) : (
             <>
               <View style={styles.summaryRow}>
-                <SummaryStat label="Duration" value={data.duration_seconds != null ? `${Math.round(data.duration_seconds / 60)}m` : "—"} />
+                <SummaryStat label="Duration" value={data.duration_seconds != null ? `${Math.round(data.duration_seconds / 60)}m` : "0m"} />
                 <SummaryStat label="Sets" value={String(totalSets)} />
                 <SummaryStat label="Calories" value={String(calories)} />
               </View>
@@ -74,7 +74,7 @@ export function HistoryScreen({ navigation, route }: MainStackScreenProps<"Histo
                   </Text>
                   {ex.sets.map((s, i) => (
                     <Text key={i} style={styles.setLine}>
-                      Set {i + 1} —{" "}
+                      Set {i + 1}:{" "}
                       {ex.category === "cardio"
                         ? `${s.duration_minutes}min · ${s.distance_km}km`
                         : `${s.weight}kg × ${s.reps}`}

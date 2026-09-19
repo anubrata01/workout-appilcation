@@ -12,7 +12,7 @@ import { RestTimer } from "../../components/workout/RestTimer";
 import { ScreenBackground } from "../../components/ScreenBackground";
 import { SessionStatRow } from "../../components/workout/SessionStatRow";
 import { SessionSummaryModal } from "../../components/workout/SessionSummaryModal";
-import { useGetDayQuery, useGetExerciseLastSessionsQuery, useSaveDayMutation } from "../../api/workoutApi";
+import { useGetDayQuery, useGetExerciseLastSessionsQuery, useSaveDayMutation, workoutApi } from "../../api/workoutApi";
 import type { ExerciseDTO } from "../../api/workoutApi";
 import { dayOffset, estimateCalories, estimateCardioCalories, keyFor } from "../../lib/workoutHelpers";
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
@@ -53,6 +53,7 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
   const { status, startedAt, exercises } = useAppSelector((s) => s.activeSession);
   const [saveDay] = useSaveDayMutation();
   const [picking, setPicking] = useState(false);
+  const [isFinishing, setIsFinishing] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [restTarget, setRestTarget] = useState<RestTarget | null>(null);
   const [finishedSummary, setFinishedSummary] = useState<{
@@ -132,9 +133,17 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
       Alert.alert("Nothing to finish", "Add at least one exercise before finishing the session.");
       return;
     }
+    // Without this, tapping Finish twice in a row (e.g. it feels slow, or a
+    // double-tap) fires two concurrent saves with the same exercises —
+    // confirmed in production data as duplicate exercise entries on the same
+    // day (workout-service serializers.py appends every save as new rows,
+    // it doesn't dedupe against an in-flight one).
+    if (isFinishing) return;
+    setIsFinishing(true);
+    const finishDate = keyFor(new Date());
     try {
       const saved = await saveDay({
-        date: keyFor(new Date()),
+        date: finishDate,
         body: {
           duration_seconds: elapsedSeconds,
           started_at: startedAt ? new Date(startedAt).toISOString() : null,
@@ -142,6 +151,14 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
           exercises: exercises.map((e) => ({ name: e.name, category: e.category, sets: e.sets })),
         },
       }).unwrap();
+      // Write the server's own response straight into the "Today" card's
+      // cache instead of relying on the invalidated tag's background refetch
+      // to land in time — that refetch was racing the getDay query's own
+      // unpause (it's skipped the whole time status is "active", right up
+      // until sessionCleared below flips it back), so a just-finished
+      // session could show up empty until you left and came back to the
+      // tab. This guarantees it's there the instant this screen re-renders.
+      await dispatch(workoutApi.util.upsertQueryData("getDay", finishDate, saved));
       // Show the server's own response, not locally-computed numbers — if
       // this were ever empty after a "successful" save, that's proof of a
       // real backend problem, not just a missing confirmation screen.
@@ -154,7 +171,9 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
       });
       dispatch(sessionCleared());
     } catch {
-      Alert.alert("Couldn't save", "Something went wrong saving your session — please try again.");
+      Alert.alert("Couldn't save", "Something went wrong saving your session. Please try again.");
+    } finally {
+      setIsFinishing(false);
     }
   }
 
@@ -220,8 +239,12 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
             <ChevronDown size={18} color={colors.muted} />
             <Text style={styles.exitBtnText}>Exit</Text>
           </Pressable>
-          <Pressable style={styles.finishBtn} onPress={handleFinish}>
-            <Text style={styles.finishBtnText}>Finish</Text>
+          <Pressable
+            style={[styles.finishBtn, isFinishing && styles.finishBtnDisabled]}
+            onPress={handleFinish}
+            disabled={isFinishing}
+          >
+            <Text style={styles.finishBtnText}>{isFinishing ? "Saving…" : "Finish"}</Text>
           </Pressable>
         </View>
 
@@ -301,6 +324,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
   },
+  finishBtnDisabled: { opacity: 0.6 },
   finishBtnText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.surface },
   exitBtn: { flexDirection: "row", alignItems: "center", gap: 2 },
   exitBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.muted },
