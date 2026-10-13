@@ -13,7 +13,7 @@ Nothing here has been run. Do it in order; stop and roll back at the first failu
 2. [ ] Merge to `v1`, approve the deploy workflow.
 3. [ ] Confirm containers ran: workout `migrate` (0005) and `seed_exercise_library`; nutrition `alembic upgrade head` (c4d8e1f7a3b2) and `python -m app.seed_foods`.
 4. [ ] Set `IMAGE_BASE_URL` for workout-service in `.env.production`.
-5. [ ] Smoke test with a real token: `GET /v1/workouts/library/?search=bench`, `GET /v1/nutrition/foods/search?q=rice`, `GET /v1/analytics/exercises/records/`, save a day, fetch the muscle distribution.
+5. [ ] Smoke test with a real token: `GET /v1/workouts/library/?search=bench`, `GET /v1/nutrition/foods/search?q=rice`, `GET /v1/analytics/exercises/<name>/records/`, save a day, fetch the muscle distribution.
 6. [ ] Check an old installed build still logs a workout and food (additive API, D14).
 7. [ ] Run `load-testing/loadtest.js` against staging or prod off-peak; watch p95 and EC2 memory (about 950MB box).
 
