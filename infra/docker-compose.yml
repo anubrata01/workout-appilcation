@@ -50,7 +50,9 @@ services:
 
   workout-service:
     build: ../services/workout-service
-    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000"
+    # seed_exercise_library is an idempotent upsert of the exercise catalogue; running it here means a
+    # deploy can never ship new catalogue data without it being applied.
+    command: sh -c "python manage.py migrate --noinput && python manage.py seed_exercise_library && python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000"
     environment:
       SECRET_KEY: dev-only-change-before-deploy
       DEBUG: "True"
@@ -157,7 +159,7 @@ services:
     build: ../services/nutrition-service
     # FastAPI/SQLAlchemy, unlike the Django services here — no manage.py, so
     # migrations run via alembic instead of `migrate --noinput`.
-    command: sh -c "alembic upgrade head && gunicorn app.main:app --bind 0.0.0.0:8000 --worker-class uvicorn.workers.UvicornWorker"
+    command: sh -c "alembic upgrade head && python -m app.seed_foods && gunicorn app.main:app --bind 0.0.0.0:8000 --worker-class uvicorn.workers.UvicornWorker"
     environment:
       DEBUG: "True"
       DATABASE_URL: postgres://loaded:loaded@postgres:5432/nutrition_db

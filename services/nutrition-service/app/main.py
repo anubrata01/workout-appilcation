@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import CORS_ALLOWED_ORIGINS, LOG_LEVEL, SERVICE_NAME
 from .logging_utils import RequestLoggingMiddleware, configure_logging
-from .routers import nutrition
+from .routers import foods, goals, measurements, nutrition
 
 configure_logging(LOG_LEVEL)
 
@@ -13,6 +13,9 @@ app.add_middleware(CORSMiddleware, allow_origins=CORS_ALLOWED_ORIGINS, allow_met
 app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(nutrition.router)
+app.include_router(foods.router)
+app.include_router(goals.router)
+app.include_router(measurements.router)
 
 
 @app.get("/healthz")
