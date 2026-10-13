@@ -8,27 +8,42 @@ import { ExerciseCard } from "../../components/workout/ExerciseCard";
 import { ExercisePicker } from "../../components/workout/ExercisePicker";
 import type { PickedExercise } from "../../components/workout/ExercisePicker";
 import { PrimaryButton } from "../../components/PrimaryButton";
+import { PromptModal } from "../../components/PromptModal";
 import { RestTimer } from "../../components/workout/RestTimer";
+import { RoutinesSection } from "../../components/workout/RoutinesSection";
 import { ScreenBackground } from "../../components/ScreenBackground";
 import { SessionStatRow } from "../../components/workout/SessionStatRow";
 import { SessionSummaryModal } from "../../components/workout/SessionSummaryModal";
-import { useGetDayQuery, useGetExerciseLastSessionsQuery, useSaveDayMutation, workoutApi } from "../../api/workoutApi";
-import type { ExerciseDTO } from "../../api/workoutApi";
+import {
+  useCreateRoutineMutation,
+  useGetDayQuery,
+  useGetExerciseLastSessionsQuery,
+  useGetRoutinesQuery,
+  useSaveDayMutation,
+  workoutApi,
+} from "../../api/workoutApi";
+import type { ExerciseDTO, RoutineDTO, RoutineItemDTO } from "../../api/workoutApi";
+import { scheduleAnalyticsRefresh } from "../../lib/analyticsSync";
+import { STALE_AFTER } from "../../lib/cachePolicy";
 import {
   dayOffset,
   estimateCalories,
   estimateCardioCalories,
   formatElapsedClock,
+  isCountedSet,
   keyFor,
 } from "../../lib/workoutHelpers";
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import {
   exerciseAdded,
+  exerciseNoteChanged,
   exerciseRemoved,
   sessionCleared,
   sessionStarted,
   setAdded,
   setDoneToggled,
+  setRemoved,
+  setTypeCycled,
   setUpdated,
 } from "../../store/activeSessionSlice";
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
@@ -47,25 +62,33 @@ interface RestTarget {
   label: string;
 }
 
+interface FinishedSummary {
+  duration: string;
+  startedAt: string | null;
+  finishedAt: string;
+  sets: number;
+  reps: number;
+  calories: number;
+  exercises: ExerciseDTO[];
+  routineName: string | null;
+  /** What "Save as routine" would store, captured from the session before it is cleared. */
+  routineItems: RoutineItemDTO[];
+}
+
 /** The core loop, rebuilt around a timed start/finish session instead of
  * editing an arbitrary calendar date (app flow doc §2.6, redesigned). */
 export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
   const dispatch = useAppDispatch();
-  const { status, startedAt, exercises } = useAppSelector((s) => s.activeSession);
+  const { status, startedAt, exercises, routineName } = useAppSelector((s) => s.activeSession);
+  const { restSeconds, vibrateOnRestEnd } = useAppSelector((s) => s.preferences);
   const [saveDay] = useSaveDayMutation();
+  const [createRoutine] = useCreateRoutineMutation();
   const [picking, setPicking] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [restTarget, setRestTarget] = useState<RestTarget | null>(null);
-  const [finishedSummary, setFinishedSummary] = useState<{
-    duration: string;
-    startedAt: string | null;
-    finishedAt: string;
-    sets: number;
-    reps: number;
-    calories: number;
-    exercises: ExerciseDTO[];
-  } | null>(null);
+  const [finishedSummary, setFinishedSummary] = useState<FinishedSummary | null>(null);
+  const [namingRoutine, setNamingRoutine] = useState(false);
 
   const todayKey = keyFor(new Date());
   const yesterdayKey = keyFor(dayOffset(-1));
@@ -73,6 +96,7 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
   const { data: yesterdayDay, isLoading: yesterdayLoading } = useGetDayQuery(yesterdayKey, {
     skip: status === "active",
   });
+  const { data: routines = [] } = useGetRoutinesQuery(undefined, { skip: status === "active" });
 
   useEffect(() => {
     if (status !== "active" || !startedAt) return;
@@ -83,7 +107,7 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
   }, [status, startedAt]);
 
   // Android lock-screen/notification-shade timer, kept in sync with the
-  // session's own lifecycle rather than the ticking clock above — it's
+  // session's own lifecycle rather than the ticking clock above: it's
   // driven natively once posted (see workoutNotification.ts), so this only
   // needs to fire on start/stop, not every second. Also covers relaunching
   // the app mid-session (status is already "active" from persisted state on
@@ -99,17 +123,17 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
   const exerciseNames = exercises.map((e) => e.name);
   const { data: lastSessions = {} } = useGetExerciseLastSessionsQuery(exerciseNames, {
     skip: status !== "active" || exerciseNames.length === 0,
-    refetchOnMountOrArgChange: true,
+    refetchOnMountOrArgChange: STALE_AFTER.picker,
   });
 
-  const totalSets = exercises.reduce((sum, e) => sum + e.sets.length, 0);
+  const totalSets = exercises.reduce((sum, e) => sum + e.sets.filter(isCountedSet).length, 0);
   const totalReps = exercises.reduce(
-    (sum, e) => (e.category === "cardio" ? sum : sum + e.sets.reduce((s, set) => s + (set.done ? set.reps : 0), 0)),
+    (sum, e) => (e.category === "cardio" ? sum : sum + e.sets.reduce((s, set) => s + (isCountedSet(set) ? set.reps : 0), 0)),
     0
   );
   const totalVolume = exercises.reduce(
     (sum, e) =>
-      e.category === "cardio" ? sum : sum + e.sets.reduce((s, set) => s + (set.done ? set.weight * set.reps : 0), 0),
+      e.category === "cardio" ? sum : sum + e.sets.reduce((s, set) => s + (isCountedSet(set) ? set.weight * set.reps : 0), 0),
     0
   );
   const totalCardioMinutes = exercises.reduce(
@@ -119,9 +143,25 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
   );
   const calories = estimateCalories(totalVolume) + estimateCardioCalories(totalCardioMinutes);
 
-  function handlePick({ name, category, isBodyweight }: PickedExercise) {
-    dispatch(exerciseAdded({ key: nextLocalKey(), name, category, isBodyweight }));
+  function handlePick({ name, category, isBodyweight, imageUrl }: PickedExercise) {
+    dispatch(exerciseAdded({ key: nextLocalKey(), name, category, isBodyweight, imageUrl }));
     setPicking(false);
+  }
+
+  function startFromRoutine(routine: RoutineDTO) {
+    dispatch(
+      sessionStarted({
+        routineName: routine.name,
+        exercises: routine.items.map((item) => ({
+          key: nextLocalKey(),
+          name: item.name,
+          category: item.category,
+          isBodyweight: item.is_bodyweight,
+          imageUrl: item.image_url,
+          setCount: item.default_sets,
+        })),
+      })
+    );
   }
 
   function handleToggleDone(exerciseKey: string, index: number) {
@@ -130,9 +170,10 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
     const willBeDone = set ? !set.done : false;
     dispatch(setDoneToggled({ key: exerciseKey, index }));
     // Marking a set done is, in the normal flow, "I just finished this set
-    // right now" — auto-starting the rest timer here matches that moment
-    // instead of making rest tracking a separate manual step.
-    if (willBeDone && exercise) {
+    // right now": auto-starting the rest timer here matches that moment
+    // instead of making rest tracking a separate manual step. A warm-up set
+    // is the exception: nobody rests a full interval after a warm-up.
+    if (willBeDone && exercise && set?.set_type !== "warmup") {
       setRestTarget({ exerciseKey, setIndex: index, label: `${exercise.name} · Set ${index + 1}` });
     }
   }
@@ -152,7 +193,7 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
       return;
     }
     // Without this, tapping Finish twice in a row (e.g. it feels slow, or a
-    // double-tap) fires two concurrent saves with the same exercises —
+    // double-tap) fires two concurrent saves with the same exercises,
     // confirmed in production data as duplicate exercise entries on the same
     // day (workout-service serializers.py appends every save as new rows,
     // it doesn't dedupe against an in-flight one).
@@ -161,6 +202,13 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
     const finishDate = keyFor(new Date());
     const startedAtIso = startedAt ? new Date(startedAt).toISOString() : null;
     const finishedAtIso = new Date().toISOString();
+    const routineItems: RoutineItemDTO[] = exercises.map((e) => ({
+      name: e.name,
+      category: e.category,
+      is_bodyweight: e.isBodyweight,
+      default_sets: Math.max(1, Math.min(e.sets.length, 10)),
+      image_url: e.imageUrl,
+    }));
     try {
       const saved = await saveDay({
         date: finishDate,
@@ -168,18 +216,26 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
           duration_seconds: elapsedSeconds,
           started_at: startedAtIso,
           finished_at: finishedAtIso,
-          exercises: exercises.map((e) => ({ name: e.name, category: e.category, sets: e.sets })),
+          exercises: exercises.map((e) => ({
+            name: e.name,
+            category: e.category,
+            note: e.note ?? "",
+            sets: e.sets,
+          })),
         },
       }).unwrap();
       // Write the server's own response straight into the "Today" card's
       // cache instead of relying on the invalidated tag's background refetch
-      // to land in time — that refetch was racing the getDay query's own
+      // to land in time: that refetch was racing the getDay query's own
       // unpause (it's skipped the whole time status is "active", right up
       // until sessionCleared below flips it back), so a just-finished
       // session could show up empty until you left and came back to the
       // tab. This guarantees it's there the instant this screen re-renders.
       await dispatch(workoutApi.util.upsertQueryData("getDay", finishDate, saved));
-      // Show the server's own response, not locally-computed numbers — if
+      // PRs, reports and streak are recomputed server-side a moment after
+      // the save; refresh them once the dust settles instead of polling.
+      scheduleAnalyticsRefresh(dispatch);
+      // Show the server's own response, not locally-computed numbers: if
       // this were ever empty after a "successful" save, that's proof of a
       // real backend problem, not just a missing confirmation screen.
       setFinishedSummary({
@@ -190,12 +246,25 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
         reps: totalReps,
         calories,
         exercises: saved.exercises,
+        routineName,
+        routineItems,
       });
       dispatch(sessionCleared());
     } catch {
       Alert.alert("Couldn't save", "Something went wrong saving your session. Please try again.");
     } finally {
       setIsFinishing(false);
+    }
+  }
+
+  async function saveAsRoutine(name: string) {
+    setNamingRoutine(false);
+    if (!finishedSummary) return;
+    try {
+      await createRoutine({ name, items: finishedSummary.routineItems.map(({ image_url: _ignored, ...i }) => i) }).unwrap();
+      Alert.alert("Routine saved", `"${name}" is now on your Workout tab.`);
+    } catch (e: any) {
+      Alert.alert("Couldn't save routine", String(e?.data?.name?.[0] ?? "Something went wrong. Please try again."));
     }
   }
 
@@ -223,6 +292,13 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
               </Text>
             </View>
 
+            <RoutinesSection
+              routines={routines}
+              onStart={startFromRoutine}
+              onEdit={(r) => navigation.navigate("RoutineEditor", { routineId: r.id })}
+              onCreate={() => navigation.navigate("RoutineEditor")}
+            />
+
             <View style={styles.recordRow}>
               <DayRecordCard
                 label="Today"
@@ -248,7 +324,18 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
             reps={finishedSummary?.reps ?? 0}
             calories={finishedSummary?.calories ?? 0}
             exercises={finishedSummary?.exercises ?? []}
+            routineName={finishedSummary?.routineName ?? null}
+            onSaveRoutine={() => setNamingRoutine(true)}
             onClose={() => setFinishedSummary(null)}
+          />
+          <PromptModal
+            visible={namingRoutine}
+            title="Save as routine"
+            message="Start this same workout again with one tap."
+            placeholder="e.g. Push Day"
+            confirmLabel="Save"
+            onSubmit={saveAsRoutine}
+            onCancel={() => setNamingRoutine(false)}
           />
         </SafeAreaView>
       </ScreenBackground>
@@ -259,13 +346,18 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
     <ScreenBackground>
       <SafeAreaView style={styles.screen} edges={["top"]}>
         <View style={styles.header}>
-          {/* Lives outside the ScrollView below, in the header — stays put
+          {/* Lives outside the ScrollView below, in the header: stays put
               when you scroll, instead of the timer disappearing along with
               the rest of the stat row. */}
           <View style={styles.timerPill}>
             <Timer size={14} color={colors.accentWarm} />
             <Text style={styles.timerPillText}>{formatElapsedClock(elapsedSeconds)}</Text>
           </View>
+          {routineName ? (
+            <Text style={styles.routineLabel} numberOfLines={1}>
+              {routineName}
+            </Text>
+          ) : null}
           <View style={styles.headerActions}>
             <Pressable style={styles.exitBtn} onPress={confirmDiscard} hitSlop={8}>
               <ChevronDown size={18} color={colors.muted} />
@@ -297,6 +389,8 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
             <RestTimer
               active={!!restTarget}
               targetLabel={restTarget?.label}
+              durationSeconds={restSeconds}
+              vibrate={vibrateOnRestEnd}
               onStop={handleRestStop}
               onDismiss={() => setRestTarget(null)}
             />
@@ -314,11 +408,17 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
                   category={ex.category}
                   sets={ex.sets}
                   isBodyweight={ex.isBodyweight}
+                  imageUrl={ex.imageUrl}
+                  note={ex.note}
                   lastSession={lastSessions[ex.name]}
+                  onOpenDetail={() => navigation.navigate("ExerciseDetail", { name: ex.name })}
                   onRemove={() => dispatch(exerciseRemoved({ key: ex.key }))}
                   onAddSet={() => dispatch(setAdded({ key: ex.key }))}
+                  onRemoveSet={(idx) => dispatch(setRemoved({ key: ex.key, index: idx }))}
                   onUpdateSet={(idx, field, value) => dispatch(setUpdated({ key: ex.key, index: idx, field, value }))}
                   onToggleDone={(idx) => handleToggleDone(ex.key, idx)}
+                  onCycleSetType={(idx) => dispatch(setTypeCycled({ key: ex.key, index: idx }))}
+                  onNoteChange={(note) => dispatch(exerciseNoteChanged({ key: ex.key, note }))}
                 />
               ))
             )}
@@ -327,6 +427,11 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
               <Plus size={16} color={colors.surface} />
               <Text style={styles.addExerciseLabel}>Add Exercises</Text>
             </Pressable>
+
+            <Text style={styles.hint}>
+              Tap a set number to mark it warm-up, drop or failure. Hold it to remove the set. Warm-ups never count
+              toward volume or records.
+            </Text>
 
             <Text style={styles.discardLink} onPress={confirmDiscard}>
               Discard workout
@@ -346,11 +451,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.sm,
   },
   headerActions: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  routineLabel: { flex: 1, fontFamily: fonts.bodySemiBold, fontSize: 12.5, color: colors.muted, textAlign: "center" },
   timerPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -397,6 +504,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   addExerciseLabel: { fontFamily: fonts.bodyBold, fontSize: 13.5, color: colors.surface },
+  hint: { fontFamily: fonts.body, fontSize: 11, color: colors.dim, textAlign: "center", lineHeight: 16, marginTop: spacing.lg },
   discardLink: {
     textAlign: "center",
     marginTop: spacing.lg,

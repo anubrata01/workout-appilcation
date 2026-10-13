@@ -18,6 +18,7 @@ from .serializers import (
     ExerciseLibraryItemSerializer,
     WorkoutDaySerializer,
     WorkoutTemplateSerializer,
+    image_urls_for,
 )
 
 # The curated catalogue is ~900 static rows that only change when the seed
@@ -102,12 +103,60 @@ class ExerciseLibraryView(APIView):
         self.throttle_scope = "workout-write" if self.request.method == "POST" else "workout-read"
         return super().get_throttles()
 
+    def _recent(self, request, limit):
+        """The distinct exercises this user logged most recently, newest first, as library-shaped rows.
+        A logged name with no library entry (typed free-hand long ago) still shows up, just without
+        an image or muscle group."""
+        rows = (
+            Exercise.objects.filter(day__user_id=request.user.id)
+            .order_by("-day__date", "order")
+            .values_list("name", "category")[:600]
+        )
+        ordered, seen = [], set()
+        for name, category in rows:
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append((name, category))
+            if len(ordered) >= limit:
+                break
+
+        library = {}
+        entries = ExerciseLibraryItem.objects.filter(
+            Q(owner_user_id__isnull=True) | Q(owner_user_id=request.user.id)
+        ).order_by("-owner_user_id")  # NULLs last in desc on Postgres, own entries win via the later write below
+        for item in sorted(entries, key=lambda i: i.owner_user_id is not None):
+            library[item.name.lower()] = item
+
+        result = []
+        for name, category in ordered:
+            item = library.get(name.lower())
+            if item is not None:
+                result.append(dict(ExerciseLibraryItemListSerializer(item).data))
+            else:
+                result.append(
+                    {
+                        "id": f"recent-{name}",
+                        "name": name,
+                        "category": category,
+                        "is_bodyweight": False,
+                        "muscle_group": "",
+                        "equipment": "",
+                        "image_url": "",
+                        "is_curated": False,
+                    }
+                )
+        return Response(result)
+
     def get(self, request):
         search = request.query_params.get("search", "").strip()
         category = request.query_params.get("category", "").strip()
         muscle_group = request.query_params.get("muscle_group", "").strip()
         limit = _int_param(request, "limit", LIBRARY_DEFAULT_LIMIT, minimum=1, maximum=LIBRARY_MAX_LIMIT)
         offset = _int_param(request, "offset", 0)
+        if request.query_params.get("recent") in ("1", "true"):
+            return self._recent(request, limit)
 
         def filtered(qs):
             if search:
@@ -151,13 +200,16 @@ class WorkoutTemplateListView(APIView):
 
     def get(self, request):
         templates = WorkoutTemplate.objects.filter(user_id=request.user.id).prefetch_related("items")
-        return Response(WorkoutTemplateSerializer(templates, many=True).data)
+        return Response(WorkoutTemplateSerializer(templates, many=True, context={"user_id": request.user.id}).data)
 
     def post(self, request):
         serializer = WorkoutTemplateSerializer(data=request.data, context={"user_id": request.user.id})
         serializer.is_valid(raise_exception=True)
         template = serializer.save()
-        return Response(WorkoutTemplateSerializer(template).data, status=status.HTTP_201_CREATED)
+        return Response(
+            WorkoutTemplateSerializer(template, context={"user_id": request.user.id}).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class WorkoutTemplateDetailView(APIView):
@@ -173,14 +225,16 @@ class WorkoutTemplateDetailView(APIView):
         return get_object_or_404(WorkoutTemplate, id=template_id, user_id=request.user.id)
 
     def get(self, request, template_id):
-        return Response(WorkoutTemplateSerializer(self._get(request, template_id)).data)
+        return Response(
+            WorkoutTemplateSerializer(self._get(request, template_id), context={"user_id": request.user.id}).data
+        )
 
     def put(self, request, template_id):
         template = self._get(request, template_id)
         serializer = WorkoutTemplateSerializer(template, data=request.data, context={"user_id": request.user.id})
         serializer.is_valid(raise_exception=True)
         template = serializer.save()
-        return Response(WorkoutTemplateSerializer(template).data)
+        return Response(WorkoutTemplateSerializer(template, context={"user_id": request.user.id}).data)
 
     def delete(self, request, template_id):
         self._get(request, template_id).delete()
@@ -195,7 +249,8 @@ class WorkoutTemplateApplyView(APIView):
 
     def post(self, request, template_id):
         template = get_object_or_404(WorkoutTemplate, id=template_id, user_id=request.user.id)
-        items = TemplateExerciseItem.objects.filter(template=template).order_by("order")
+        items = list(TemplateExerciseItem.objects.filter(template=template).order_by("order"))
+        images = image_urls_for([i.name for i in items], request.user.id)
         return Response(
             [
                 {
@@ -203,6 +258,7 @@ class WorkoutTemplateApplyView(APIView):
                     "category": i.category,
                     "is_bodyweight": i.is_bodyweight,
                     "default_sets": i.default_sets,
+                    "image_url": images.get(i.name.lower(), ""),
                 }
                 for i in items
             ]

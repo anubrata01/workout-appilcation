@@ -299,7 +299,8 @@ class RoutineTests(APITestCase):
         )
         self.assertEqual(applied.status_code, 200)
         self.assertEqual(
-            applied.data[0], {"name": "Bench Press", "category": "strength", "is_bodyweight": False, "default_sets": 4}
+            applied.data[0],
+            {"name": "Bench Press", "category": "strength", "is_bodyweight": False, "default_sets": 4, "image_url": ""},
         )
         self.assertTrue(applied.data[1]["is_bodyweight"])
 
@@ -448,3 +449,70 @@ class MuscleDistributionTests(APITestCase):
             self.client.get("/api/v1/workouts/muscle-distribution/?range=bogus", HTTP_AUTHORIZATION=self.auth).status_code,
             200,
         )
+
+
+class RoutineImageTests(APITestCase):
+    def setUp(self):
+        from django.core.management import call_command
+
+        cache.clear()
+        call_command("seed_exercise_library")
+        self.auth = f"Bearer {make_access_token(uuid.uuid4())}"
+
+    def test_routine_items_carry_the_library_image_for_thumbnails(self):
+        body = {"name": "Chest", "items": [{"name": "Bench Press"}, {"name": "My Own Move"}]}
+        created = self.client.post("/api/v1/workouts/templates/", body, format="json", HTTP_AUTHORIZATION=self.auth)
+        by_name = {i["name"]: i["image_url"] for i in created.data["items"]}
+        self.assertTrue(by_name["Bench Press"].startswith("https://"))
+        self.assertEqual(by_name["My Own Move"], "")  # no library match is fine, just no thumbnail
+
+        listed = self.client.get("/api/v1/workouts/templates/", HTTP_AUTHORIZATION=self.auth)
+        self.assertTrue(listed.data[0]["items"][0]["image_url"].startswith("https://"))
+        applied = self.client.post(
+            f"/api/v1/workouts/templates/{created.data['id']}/apply/", format="json", HTTP_AUTHORIZATION=self.auth
+        )
+        self.assertTrue(applied.data[0]["image_url"].startswith("https://"))
+
+
+class RecentExercisesTests(APITestCase):
+    def setUp(self):
+        from django.core.management import call_command
+
+        cache.clear()
+        call_command("seed_exercise_library")
+        self.auth = f"Bearer {make_access_token(uuid.uuid4())}"
+
+    def _log(self, date, *names):
+        payload = {"exercises": [{"name": n, "sets": [{"weight": 10, "reps": 5, "done": True}]} for n in names]}
+        self.client.put(f"/api/v1/workouts/days/{date}/", payload, format="json", HTTP_AUTHORIZATION=self.auth)
+
+    def test_recent_lists_distinct_logged_exercises_newest_first_with_library_data(self):
+        self._log(YESTERDAY, "Squat", "Bench Press")
+        self._log(TODAY, "Lat Pulldown", "Bench Press")
+
+        resp = self.client.get("/api/v1/workouts/library/?recent=1", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual(resp.status_code, 200)
+        names = [i["name"] for i in resp.data]
+        self.assertEqual(names[:2], ["Lat Pulldown", "Bench Press"])  # today's first, Bench Press not duplicated
+        self.assertEqual(names.count("Bench Press"), 1)
+        bench = next(i for i in resp.data if i["name"] == "Bench Press")
+        self.assertEqual(bench["muscle_group"], "chest")
+        self.assertTrue(bench["image_url"].startswith("https://"))
+
+    def test_recent_keeps_free_hand_names_that_have_no_library_entry(self):
+        self._log(TODAY, "Sitted rowing")
+        resp = self.client.get("/api/v1/workouts/library/?recent=1", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual(resp.data[0]["name"], "Sitted rowing")
+        self.assertEqual(resp.data[0]["image_url"], "")
+        self.assertTrue(resp.data[0]["id"])  # list keys need a stable id
+
+    def test_recent_is_empty_for_a_new_user_and_respects_limit(self):
+        self.assertEqual(self.client.get("/api/v1/workouts/library/?recent=1", HTTP_AUTHORIZATION=self.auth).data, [])
+        self._log(TODAY, "Squat", "Deadlift", "Plank")
+        resp = self.client.get("/api/v1/workouts/library/?recent=1&limit=2", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual(len(resp.data), 2)
+
+    def test_recent_only_includes_the_callers_own_history(self):
+        self._log(TODAY, "Squat")
+        other = f"Bearer {make_access_token(uuid.uuid4())}"
+        self.assertEqual(self.client.get("/api/v1/workouts/library/?recent=1", HTTP_AUTHORIZATION=other).data, [])

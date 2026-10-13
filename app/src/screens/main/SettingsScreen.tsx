@@ -1,5 +1,6 @@
 import React from "react";
-import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { ChevronLeft } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "../../components/PrimaryButton";
@@ -9,12 +10,20 @@ import { useDeleteAccountMutation, useLogoutMutation, useMeQuery } from "../../a
 import { clearTokens } from "../../lib/secureStorage";
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import { loggedOut } from "../../store/authSlice";
-import { colors, fonts, spacing } from "../../theme/tokens";
+import { REST_PRESETS, restSecondsChanged, vibrateOnRestEndChanged } from "../../store/preferencesSlice";
+import { colors, fonts, radii, spacing } from "../../theme/tokens";
+import type { MainStackScreenProps } from "../../navigation/types";
 
-/** App flow doc §2.11 — account rows + opt-in reminders. */
-export function SettingsScreen() {
+function restLabel(seconds: number): string {
+  if (seconds === 0) return "Stopwatch";
+  return seconds < 60 ? `${seconds}s` : seconds % 60 === 0 ? `${seconds / 60} min` : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+/** App flow doc §2.11: workout preferences, account rows and opt-in reminders. */
+export function SettingsScreen({ navigation }: MainStackScreenProps<"Settings">) {
   const dispatch = useAppDispatch();
   const refreshToken = useAppSelector((s) => s.auth.refreshToken);
+  const { restSeconds, vibrateOnRestEnd } = useAppSelector((s) => s.preferences);
   const { data: user } = useMeQuery();
   const [logout] = useLogoutMutation();
   const [deleteAccount, { isLoading: deleting }] = useDeleteAccountMutation();
@@ -22,7 +31,7 @@ export function SettingsScreen() {
   async function handleLogout() {
     if (refreshToken) {
       await logout({ refresh: refreshToken }).catch(() => {
-        // Best-effort server-side revoke — local logout proceeds regardless.
+        // Best-effort server-side revoke; local logout proceeds regardless.
       });
     }
     await clearTokens();
@@ -51,9 +60,45 @@ export function SettingsScreen() {
   return (
     <ScreenBackground>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
+            <ChevronLeft size={20} color={colors.chalk} />
+          </Pressable>
           <Text style={styles.title}>Settings</Text>
+          <View style={{ width: 20 }} />
+        </View>
+
+        <ScrollView contentContainerStyle={styles.content}>
           {user ? <Text style={styles.email}>{user.email}</Text> : null}
+
+          <Text style={styles.sectionLabel}>Rest timer</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardHint}>
+              How long to rest after a set. Pick Stopwatch to just count up and record how long you actually rested.
+            </Text>
+            <View style={styles.chipRow}>
+              {REST_PRESETS.map((preset) => (
+                <Pressable
+                  key={preset}
+                  onPress={() => dispatch(restSecondsChanged(preset))}
+                  style={[styles.chip, restSeconds === preset && styles.chipActive]}
+                >
+                  <Text style={[styles.chipText, restSeconds === preset && styles.chipTextActive]}>{restLabel(preset)}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={[styles.switchRow, restSeconds === 0 && { opacity: 0.4 }]}>
+              <Text style={styles.switchLabel}>Vibrate when rest ends</Text>
+              <Switch
+                value={vibrateOnRestEnd}
+                disabled={restSeconds === 0}
+                onValueChange={(v) => {
+                  dispatch(vibrateOnRestEndChanged(v));
+                }}
+                trackColor={{ true: colors.accent }}
+              />
+            </View>
+          </View>
 
           <ReminderSettings />
 
@@ -72,13 +117,46 @@ export function SettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+  },
+  title: { fontFamily: fonts.display, fontSize: 24, color: colors.chalk, letterSpacing: 1 },
   content: { padding: spacing.xxl, paddingTop: spacing.md, alignItems: "center" },
-  title: { fontFamily: fonts.display, fontSize: 30, color: colors.chalk, letterSpacing: 1, alignSelf: "flex-start" },
-  email: { fontFamily: fonts.data, fontSize: 12, color: colors.muted, alignSelf: "flex-start", marginTop: spacing.xs },
+  email: { fontFamily: fonts.data, fontSize: 12, color: colors.muted, alignSelf: "flex-start" },
+  sectionLabel: {
+    alignSelf: "flex-start",
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10.5,
+    color: colors.muted,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginTop: spacing.xl,
+    marginBottom: spacing.sm,
+  },
+  card: {
+    width: "100%",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+  },
+  cardHint: { fontFamily: fonts.body, fontSize: 12, color: colors.dim, lineHeight: 17, marginBottom: spacing.md },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  chip: { backgroundColor: colors.track, borderRadius: radii.pill, paddingHorizontal: spacing.md + 2, paddingVertical: 7 },
+  chipActive: { backgroundColor: colors.accent },
+  chipText: { fontFamily: fonts.bodySemiBold, fontSize: 12.5, color: colors.muted },
+  chipTextActive: { color: colors.surface },
+  switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.lg },
+  switchLabel: { fontFamily: fonts.bodySemiBold, fontSize: 13.5, color: colors.chalk },
   dangerLink: {
     marginTop: spacing.xxl * 2,
     color: colors.faint,
-    fontFamily: fonts.body,
-    fontSize: 12.5,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
   },
 });

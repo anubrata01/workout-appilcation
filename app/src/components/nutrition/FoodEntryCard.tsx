@@ -10,6 +10,12 @@ interface Props {
   onRemove: () => void;
 }
 
+function amountLabel(entry: FoodEntryDTO): string {
+  if (entry.quantity_label) return entry.quantity_label;
+  if (entry.serving_amount) return `${Math.round(entry.serving_amount * 10) / 10} ${entry.serving_unit}`;
+  return "";
+}
+
 export function FoodEntryCard({ entry, onRemove }: Props) {
   function confirmRemove() {
     Alert.alert(`Remove ${entry.name}?`, undefined, [
@@ -18,15 +24,18 @@ export function FoodEntryCard({ entry, onRemove }: Props) {
     ]);
   }
 
+  const amount = amountLabel(entry);
   return (
     <View style={styles.card}>
       <View style={{ flex: 1 }}>
         <Text style={styles.name}>{entry.name}</Text>
         <Text style={styles.meta}>
-          {entry.quantity_label ? `${entry.quantity_label} · ` : ""}
-          {entry.calories} kcal · P {entry.protein_g}g · C {entry.carbs_g}g · F {entry.fat_g}g
+          {amount ? `${amount} · ` : ""}
+          {entry.calories} kcal · P {Math.round(entry.protein_g)}g · C {Math.round(entry.carbs_g)}g · F{" "}
+          {Math.round(entry.fat_g)}g
         </Text>
       </View>
+      {entry.eaten_at ? <Text style={styles.time}>{entry.eaten_at}</Text> : null}
       <Pressable onPress={confirmRemove} hitSlop={8}>
         <Trash2 size={14} color={colors.muted} />
       </Pressable>
@@ -38,6 +47,7 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: "row",
     alignItems: "center",
+    gap: spacing.md,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -47,4 +57,5 @@ const styles = StyleSheet.create({
   },
   name: { fontFamily: fonts.bodySemiBold, fontSize: 13.5, color: colors.chalk },
   meta: { fontFamily: fonts.data, fontSize: 10.5, color: colors.muted, marginTop: 3 },
+  time: { fontFamily: fonts.data, fontSize: 10.5, color: colors.faint },
 });

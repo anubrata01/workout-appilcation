@@ -47,11 +47,25 @@ export function formatDateHeader(d: Date): { day: string; date: string } {
   return { day, date };
 }
 
+/** A set counts toward volume, calories, totals and PRs only if it is done and
+ * not a warm-up. Mirrors the backend (analytics-service recompute.py); sets
+ * cached before set types existed have no set_type and count as normal. */
+export function isCountedSet(set: { done: boolean; set_type?: string }): boolean {
+  return set.done && set.set_type !== "warmup";
+}
+
+/** Estimated one-rep max (Epley): weight x (1 + reps / 30). One rep is the weight itself. */
+export function estimateOneRepMax(weight: number, reps: number): number {
+  if (weight <= 0 || reps <= 0) return 0;
+  if (reps === 1) return weight;
+  return Math.round(weight * (1 + reps / 30) * 10) / 10;
+}
+
 /** Same formula as the prototype's estimateCalories, ported unchanged (PRD 5.1, backend schema doc 3). */
 export function dayVolume(day: VolumeSource | null | undefined): number {
   if (!day) return 0;
   return day.exercises.reduce(
-    (sum, ex) => sum + ex.sets.reduce((s, set) => s + (set.done ? set.weight * set.reps : 0), 0),
+    (sum, ex) => sum + ex.sets.reduce((s, set) => s + (isCountedSet(set) ? set.weight * set.reps : 0), 0),
     0
   );
 }

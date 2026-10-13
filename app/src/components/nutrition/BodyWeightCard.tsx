@@ -1,43 +1,52 @@
 import React, { useEffect, useState } from "react";
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Scale } from "lucide-react-native";
-import { StyleSheet, Text, TextInput, View } from "react-native";
 
+import { useGetMeasurementsQuery, useSaveMeasurementMutation } from "../../api/nutritionApi";
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
 
 interface Props {
-  weightKg: number | null;
-  onChange: (nextKg: number | null) => void;
+  /** The day this weight belongs to (YYYY-MM-DD). */
+  dateKey: string;
+  onOpenTrend?: () => void;
 }
 
-// A quick place to log today's body weight alongside food/water — separate
-// from the workout log since it's a once-a-day number, not tied to a
-// session. Saved through the same debounced day-save as everything else on
-// this screen (see NutritionScreen's save effect).
-export function BodyWeightCard({ weightKg, onChange }: Props) {
-  const [text, setText] = useState(weightKg != null ? String(weightKg) : "");
+/** Quick weight entry for the day being viewed. Backed by the same body
+ * measurements the Measurements screen charts, not a field on the food diary,
+ * so one weigh-in shows up everywhere. */
+export function BodyWeightCard({ dateKey, onOpenTrend }: Props) {
+  // Same query the Measurements screen and Home use: one cached request serves all of them.
+  const { data: readings = [] } = useGetMeasurementsQuery({ kind: "weight", range: "quarter" });
+  const [saveMeasurement] = useSaveMeasurementMutation();
 
-  // Only re-sync from the prop when it actually changes underneath us (e.g.
-  // switching dates) — not on every keystroke, which would fight typing.
+  const saved = readings.find((r) => r.date === dateKey)?.value ?? null;
+  const [text, setText] = useState(saved != null ? String(saved) : "");
+
+  // Re-sync when the saved value or the viewed date changes underneath us
+  // (date arrows, a refetch), but never mid-typing, which only changes `text`.
   useEffect(() => {
-    setText(weightKg != null ? String(weightKg) : "");
-  }, [weightKg]);
+    setText(saved != null ? String(saved) : "");
+  }, [saved, dateKey]);
 
-  function commit(raw: string) {
+  async function commit(raw: string) {
     const trimmed = raw.trim();
-    if (trimmed === "") {
-      onChange(null);
-      return;
-    }
+    if (trimmed === "") return; // clearing the box doesn't delete a reading; use the Measurements screen for that
     const parsed = parseFloat(trimmed);
     if (!Number.isFinite(parsed) || parsed <= 0) {
-      setText(weightKg != null ? String(weightKg) : "");
+      setText(saved != null ? String(saved) : "");
       return;
     }
-    onChange(parsed);
+    if (parsed === saved) return;
+    try {
+      await saveMeasurement({ date: dateKey, kind: "weight", value: parsed }).unwrap();
+    } catch (e: any) {
+      setText(saved != null ? String(saved) : "");
+      Alert.alert("Couldn't save weight", String(e?.data?.detail ?? "Check the number and try again."));
+    }
   }
 
   return (
-    <View style={styles.card}>
+    <Pressable style={styles.card} onPress={onOpenTrend} disabled={!onOpenTrend}>
       <View style={styles.left}>
         <Scale size={18} color="#7C6FE0" />
         <Text style={styles.caption}>Body weight</Text>
@@ -54,7 +63,7 @@ export function BodyWeightCard({ weightKg, onChange }: Props) {
         />
         <Text style={styles.unit}>kg</Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 

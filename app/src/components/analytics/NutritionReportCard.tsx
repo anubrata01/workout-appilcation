@@ -4,7 +4,7 @@ import { Droplet, Utensils } from "lucide-react-native";
 
 import { useGetNutritionSummaryQuery } from "../../api/nutritionApi";
 import { LineChart } from "../charts/LineChart";
-import { parseLocalDate } from "../../lib/workoutHelpers";
+import { keyFor, parseLocalDate } from "../../lib/workoutHelpers";
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
 
 interface Props {
@@ -18,7 +18,7 @@ function formatShortDate(iso: string): string {
 /** What's actually been eaten and drunk over the range — calories per day
  * and total water — sitting alongside the workout stats above it. */
 export function NutritionReportCard({ range }: Props) {
-  const { data = [], isLoading } = useGetNutritionSummaryQuery(range);
+  const { data = [], isLoading } = useGetNutritionSummaryQuery({ range, end: keyFor(new Date()) });
 
   if (isLoading || data.length === 0) return null;
 

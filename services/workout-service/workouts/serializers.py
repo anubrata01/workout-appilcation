@@ -107,6 +107,22 @@ class ExerciseLibraryItemListSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "category", "is_bodyweight", "muscle_group", "equipment", "image_url", "is_curated"]
 
 
+def image_urls_for(names, user_id=None):
+    """name (lowercase) -> image_url for the given exercise names, in ONE query.
+    A routine item only stores a name, so thumbnails are joined in at read time."""
+    from django.db.models import Q
+
+    wanted = {n.lower() for n in names}
+    if not wanted:
+        return {}
+    qs = ExerciseLibraryItem.objects.exclude(image_url="")
+    if user_id is not None:
+        qs = qs.filter(Q(owner_user_id__isnull=True) | Q(owner_user_id=user_id))
+    else:
+        qs = qs.filter(owner_user_id__isnull=True)
+    return {name.lower(): url for name, url in qs.values_list("name", "image_url") if name.lower() in wanted}
+
+
 class TemplateExerciseItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = TemplateExerciseItem
@@ -121,6 +137,13 @@ class WorkoutTemplateSerializer(serializers.ModelSerializer):
         model = WorkoutTemplate
         fields = ["id", "name", "items", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        images = image_urls_for([item["name"] for item in data["items"]], self.context.get("user_id"))
+        for item in data["items"]:
+            item["image_url"] = images.get(item["name"].lower(), "")
+        return data
 
     def validate_name(self, value):
         value = value.strip()

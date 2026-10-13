@@ -3,7 +3,7 @@ import { configureStore } from "@reduxjs/toolkit";
 import { workoutApi } from "../workoutApi";
 import type { WorkoutDayDTO } from "../workoutApi";
 import { nutritionApi } from "../nutritionApi";
-import type { NutritionDayDTO } from "../nutritionApi";
+import type { FoodEntryDTO, NutritionDayDTO } from "../nutritionApi";
 import authReducer, { credentialsReceived } from "../../store/authSlice";
 
 // A real store (not a mock) wired up with the actual API slices, so these
@@ -50,6 +50,23 @@ const emptyDay = (date: string): WorkoutDayDTO => ({
   started_at: null,
   finished_at: null,
   exercises: [],
+});
+
+const foodEntry = (overrides: Partial<FoodEntryDTO> & Pick<FoodEntryDTO, "id" | "name">): FoodEntryDTO => ({
+  quantity_label: "",
+  calories: 0,
+  protein_g: 0,
+  carbs_g: 0,
+  fat_g: 0,
+  fiber_g: 0,
+  sugar_g: 0,
+  sodium_mg: 0,
+  meal: "snack",
+  eaten_at: null,
+  serving_amount: null,
+  serving_unit: "g",
+  food_id: null,
+  ...overrides,
 });
 
 const emptyNutritionDay = (date: string): NutritionDayDTO => ({
@@ -202,7 +219,7 @@ describe("nutritionApi caching", () => {
     const saved: NutritionDayDTO = {
       ...emptyNutritionDay("2026-09-13"),
       entries: [
-        { id: "food-1", name: "Chicken", quantity_label: "200g", calories: 330, protein_g: 62, carbs_g: 0, fat_g: 7 },
+        foodEntry({ id: "food-1", name: "Chicken", quantity_label: "200g", calories: 330, protein_g: 62, fat_g: 7 }),
       ],
     };
 
@@ -221,7 +238,7 @@ describe("nutritionApi caching", () => {
     const saturday: NutritionDayDTO = {
       ...emptyNutritionDay("2026-09-13"),
       entries: [
-        { id: "food-1", name: "Chicken", quantity_label: "", calories: 330, protein_g: 62, carbs_g: 0, fat_g: 7 },
+        foodEntry({ id: "food-1", name: "Chicken", calories: 330, protein_g: 62, fat_g: 7 }),
       ],
     };
     await store.dispatch(nutritionApi.util.upsertQueryData("getNutritionDay", "2026-09-13", saturday));
