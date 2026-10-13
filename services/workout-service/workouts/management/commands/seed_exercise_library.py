@@ -1,6 +1,25 @@
+import json
+from pathlib import Path
+
 from django.core.management.base import BaseCommand
 
 from workouts.models import ExerciseLibraryItem
+
+# Built by tools/build_exercise_catalog.py from the public-domain
+# free-exercise-db dataset and committed, so seeding never needs network
+# access. Images are served from the dataset's public CDN path.
+CATALOG_PATH = Path(__file__).resolve().parents[2] / "data" / "exercise_catalog.json"
+IMAGE_BASE_URL = "https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/exercises/"
+
+
+def image_url(path):
+    return f"{IMAGE_BASE_URL}{path}" if path else ""
+
+
+def load_catalog():
+    if not CATALOG_PATH.exists():
+        return {"images": {}, "extras": []}
+    return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
 
 # Curated defaults so the exercise picker has real content without every user
 # typing their own catalog from scratch (PRD 9 open question, resolved here
@@ -114,8 +133,11 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         created, updated = 0, 0
+        catalog = load_catalog()
+        extras_for = catalog["images"]
 
         for name, muscle_group, equipment in EXERCISES:
+            extra = extras_for.get(name, {})
             _, was_created = ExerciseLibraryItem.objects.update_or_create(
                 owner_user_id=None,
                 name=name,
@@ -124,6 +146,8 @@ class Command(BaseCommand):
                     "is_bodyweight": equipment == "bodyweight",
                     "muscle_group": muscle_group,
                     "equipment": equipment,
+                    "image_url": image_url(extra.get("image", "")),
+                    "description": extra.get("description", ""),
                     "is_curated": True,
                 },
             )
@@ -131,6 +155,7 @@ class Command(BaseCommand):
             updated += not was_created
 
         for name, muscle_group, equipment in CARDIO_EXERCISES:
+            extra = extras_for.get(name, {})
             _, was_created = ExerciseLibraryItem.objects.update_or_create(
                 owner_user_id=None,
                 name=name,
@@ -139,6 +164,27 @@ class Command(BaseCommand):
                     "is_bodyweight": equipment in ("none", "bodyweight"),
                     "muscle_group": muscle_group,
                     "equipment": equipment,
+                    "image_url": image_url(extra.get("image", "")),
+                    "description": extra.get("description", ""),
+                    "is_curated": True,
+                },
+            )
+            created += was_created
+            updated += not was_created
+
+        # The wider catalogue (everything else in the dataset), so the picker
+        # has ~800 searchable exercises with images instead of ~90.
+        for entry in catalog["extras"]:
+            _, was_created = ExerciseLibraryItem.objects.update_or_create(
+                owner_user_id=None,
+                name=entry["name"],
+                defaults={
+                    "category": entry["category"],
+                    "is_bodyweight": entry["is_bodyweight"],
+                    "muscle_group": entry["muscle_group"],
+                    "equipment": entry["equipment"],
+                    "image_url": image_url(entry["image"]),
+                    "description": entry["description"],
                     "is_curated": True,
                 },
             )

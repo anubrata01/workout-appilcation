@@ -61,6 +61,42 @@ class ExerciseProgressView(APIView):
         return Response([{"date": str(r.date), "weight": r.weight, "reps": r.reps} for r in rows])
 
 
+class ExerciseRecordsView(APIView):
+    """
+    GET /api/v1/analytics/exercises/<name>/records/ - the personal-record
+    types shown on an exercise's detail screen: heaviest weight, best
+    estimated 1RM (Epley: weight x (1 + reps/30)), and best single-set volume.
+    Derived at read time from ExerciseDailyBest (one row per exercise per
+    day, that day's best set), so there is no extra table to backfill. The
+    volume figure therefore reflects each day's top set by weight, which can
+    differ slightly from a true max-volume set on days with mixed rep ranges.
+    """
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "analytics-read"
+
+    def get(self, request, name):
+        rows = list(ExerciseDailyBest.objects.filter(user_id=request.user.id, exercise_name=name))
+        if not rows:
+            return Response({"name": name, "sessions": 0, "heaviest": None, "best_e1rm": None, "best_set_volume": None})
+
+        def entry(row, value):
+            return {"value": round(value, 1), "weight": row.weight, "reps": row.reps, "date": str(row.date)}
+
+        heaviest = max(rows, key=lambda r: (r.weight, r.reps))
+        best_e1rm = max(rows, key=lambda r: r.weight * (1 + r.reps / 30))
+        best_volume = max(rows, key=lambda r: r.weight * r.reps)
+        return Response(
+            {
+                "name": name,
+                "sessions": len(rows),
+                "heaviest": entry(heaviest, heaviest.weight),
+                "best_e1rm": entry(best_e1rm, best_e1rm.weight * (1 + best_e1rm.reps / 30)),
+                "best_set_volume": entry(best_volume, best_volume.weight * best_volume.reps),
+            }
+        )
+
+
 class ReportView(APIView):
     """GET /api/v1/analytics/reports/?range=week|month (app flow doc 2.9)."""
 

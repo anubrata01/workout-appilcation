@@ -7,4 +7,5 @@ urlpatterns = [
     path("v1/analytics/reports/", views.ReportView.as_view()),
     path("v1/analytics/streak/", views.StreakView.as_view()),
     path("v1/analytics/exercises/<str:name>/progress/", views.ExerciseProgressView.as_view()),
+    path("v1/analytics/exercises/<str:name>/records/", views.ExerciseRecordsView.as_view()),
 ]

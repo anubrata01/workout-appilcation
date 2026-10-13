@@ -204,3 +204,70 @@ class AnalyticsApiTests(APITestCase):
         self.assertEqual([r["weight"] for r in resp.data], [80, 85, 90])  # oldest first — a real trend, not just current best
         self.assertEqual(resp.data[0]["date"], "2026-07-20")
         self.assertEqual(resp.data[-1]["date"], "2026-07-25")
+
+
+class WarmupSetTests(TestCase):
+    def test_warmup_sets_never_count_toward_volume_or_daily_best(self):
+        user_id = str(uuid.uuid4())
+        day = {
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "sets": [
+                        {"weight": 100, "reps": 10, "done": True, "set_type": "warmup"},  # heaviest, but a warm-up
+                        {"weight": 60, "reps": 8, "done": True, "set_type": "normal"},
+                    ],
+                }
+            ]
+        }
+        recompute_for_day(user_id, "2026-07-25", day)
+
+        best = ExerciseDailyBest.objects.get(user_id=user_id, exercise_name="Bench Press")
+        self.assertEqual(best.weight, 60)
+        self.assertEqual(DailyVolumeSnapshot.objects.get(user_id=user_id).volume, 480)  # 60 x 8 only
+        self.assertEqual(PersonalRecord.objects.get(user_id=user_id).best_weight, 60)
+
+    def test_a_day_of_only_warmups_creates_no_pr(self):
+        user_id = str(uuid.uuid4())
+        day = {"exercises": [{"name": "Squat", "sets": [{"weight": 40, "reps": 10, "done": True, "set_type": "warmup"}]}]}
+        recompute_for_day(user_id, "2026-07-25", day)
+        self.assertFalse(PersonalRecord.objects.filter(user_id=user_id).exists())
+
+    def test_sets_from_old_clients_without_set_type_still_count(self):
+        user_id = str(uuid.uuid4())
+        recompute_for_day(user_id, "2026-07-25", PUSH_DAY)  # no set_type key anywhere
+        self.assertEqual(PersonalRecord.objects.get(user_id=user_id).best_weight, 60)
+
+
+class ExerciseRecordsTests(APITestCase):
+    def setUp(self):
+        self.user_id = str(uuid.uuid4())
+        self.auth = f"Bearer {make_access_token(self.user_id)}"
+
+    def _day(self, weight, reps):
+        return {"exercises": [{"name": "Squat", "sets": [{"weight": weight, "reps": reps, "done": True}]}]}
+
+    def test_returns_each_record_type_from_the_right_day(self):
+        recompute_for_day(self.user_id, "2026-07-20", self._day(100, 5))  # heaviest, best e1RM
+        recompute_for_day(self.user_id, "2026-07-22", self._day(80, 12))  # best set volume (960)
+
+        resp = self.client.get("/api/v1/analytics/exercises/Squat/records/", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["sessions"], 2)
+        self.assertEqual(resp.data["heaviest"]["weight"], 100)
+        self.assertEqual(resp.data["heaviest"]["date"], "2026-07-20")
+        self.assertEqual(resp.data["best_e1rm"]["value"], 116.7)  # 100 x (1 + 5/30)
+        self.assertEqual(resp.data["best_set_volume"]["value"], 960.0)
+        self.assertEqual(resp.data["best_set_volume"]["date"], "2026-07-22")
+
+    def test_unknown_exercise_returns_empty_records_not_an_error(self):
+        resp = self.client.get("/api/v1/analytics/exercises/Nothing/records/", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["sessions"], 0)
+        self.assertIsNone(resp.data["heaviest"])
+
+    def test_another_users_records_are_invisible(self):
+        recompute_for_day(self.user_id, "2026-07-20", self._day(100, 5))
+        other = f"Bearer {make_access_token(uuid.uuid4())}"
+        resp = self.client.get("/api/v1/analytics/exercises/Squat/records/", HTTP_AUTHORIZATION=other)
+        self.assertEqual(resp.data["sessions"], 0)

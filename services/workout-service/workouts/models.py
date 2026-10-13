@@ -7,6 +7,13 @@ CATEGORY_CHOICES = [
     ("cardio", "Cardio"),
 ]
 
+SET_TYPE_CHOICES = [
+    ("normal", "Normal"),
+    ("warmup", "Warm-up"),
+    ("drop", "Drop set"),
+    ("failure", "To failure"),
+]
+
 
 class WorkoutDay(models.Model):
     """One row per user per calendar date (schema doc 2). user_id is not a DB FK —
@@ -72,6 +79,7 @@ class Exercise(models.Model):
     )
     name = models.CharField(max_length=120)
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="strength")
+    note = models.TextField(blank=True, default="")
     order = models.PositiveIntegerField(default=0)
 
     class Meta:
@@ -96,6 +104,8 @@ class SetEntry(models.Model):
     distance_km = models.FloatField(default=0)
     rest_seconds = models.PositiveIntegerField(null=True, blank=True)
     done = models.BooleanField(default=False)
+    # Warm-up sets are logged but never counted toward volume, calories or PRs.
+    set_type = models.CharField(max_length=10, choices=SET_TYPE_CHOICES, default="normal")
     order = models.PositiveIntegerField(default=0)
 
     class Meta:
@@ -126,6 +136,9 @@ class TemplateExerciseItem(models.Model):
         ExerciseLibraryItem, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
     name = models.CharField(max_length=120)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="strength")
+    is_bodyweight = models.BooleanField(default=False)
+    default_sets = models.PositiveSmallIntegerField(default=3)
     order = models.PositiveIntegerField(default=0)
 
     class Meta:

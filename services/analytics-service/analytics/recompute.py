@@ -8,7 +8,7 @@ def _day_volume_and_calories(day_payload: dict) -> tuple[float, int]:
     volume = 0.0
     for exercise in day_payload.get("exercises", []):
         for s in exercise.get("sets", []):
-            if s.get("done"):
+            if s.get("done") and s.get("set_type", "normal") != "warmup":
                 volume += s.get("weight", 0) * s.get("reps", 0)
     calories = round(volume * 0.1 + (90 if volume > 0 else 0))
     return volume, calories
@@ -37,7 +37,10 @@ def _sync_exercise_daily_best(user_id: str, log_date: date, day_payload: dict) -
 
     done_sets_by_name: dict[str, list[dict]] = {}
     for exercise in day_payload.get("exercises", []):
-        done_sets = [s for s in exercise.get("sets", []) if s.get("done")]
+        # Warm-up sets are logged but never count toward a day's best or a PR.
+        done_sets = [
+            s for s in exercise.get("sets", []) if s.get("done") and s.get("set_type", "normal") != "warmup"
+        ]
         if not done_sets:
             continue
         done_sets_by_name.setdefault(exercise["name"], []).extend(done_sets)
