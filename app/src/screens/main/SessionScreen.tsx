@@ -9,7 +9,7 @@ import { ExercisePicker } from "../../components/workout/ExercisePicker";
 import type { PickedExercise } from "../../components/workout/ExercisePicker";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { PromptModal } from "../../components/PromptModal";
-import { RestTimer } from "../../components/workout/RestTimer";
+import { RestStopwatch } from "../../components/workout/RestStopwatch";
 import { RoutinesSection } from "../../components/workout/RoutinesSection";
 import { ScreenBackground } from "../../components/ScreenBackground";
 import { SessionStatRow } from "../../components/workout/SessionStatRow";
@@ -56,6 +56,7 @@ function nextLocalKey() {
   return `local-${Date.now()}-${localKeyCounter}`;
 }
 
+/** The set a rest is recorded on: the last one ticked done. */
 interface RestTarget {
   exerciseKey: string;
   setIndex: number;
@@ -80,12 +81,15 @@ interface FinishedSummary {
 export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
   const dispatch = useAppDispatch();
   const { status, startedAt, exercises, routineName } = useAppSelector((s) => s.activeSession);
-  const { restSeconds, vibrateOnRestEnd } = useAppSelector((s) => s.preferences);
   const [saveDay] = useSaveDayMutation();
   const [createRoutine] = useCreateRoutineMutation();
   const [picking, setPicking] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  // Rest stopwatch: manual start and stop only. lastDone is the set whose rest
+  // it will measure (the most recent one ticked done).
+  const [lastDone, setLastDone] = useState<RestTarget | null>(null);
+  const [restStartedAt, setRestStartedAt] = useState<number | null>(null);
   const [restTarget, setRestTarget] = useState<RestTarget | null>(null);
   const [finishedSummary, setFinishedSummary] = useState<FinishedSummary | null>(null);
   const [namingRoutine, setNamingRoutine] = useState(false);
@@ -119,6 +123,15 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
       hideWorkoutTimerNotification();
     }
   }, [status, startedAt]);
+
+  // A finished or discarded session must not leave a stopwatch running into the next one.
+  useEffect(() => {
+    if (status !== "active") {
+      setRestStartedAt(null);
+      setRestTarget(null);
+      setLastDone(null);
+    }
+  }, [status]);
 
   const exerciseNames = exercises.map((e) => e.name);
   const { data: lastSessions = {} } = useGetExerciseLastSessionsQuery(exerciseNames, {
@@ -164,26 +177,36 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
     );
   }
 
+  function logRest(target: RestTarget | null, elapsedSeconds: number) {
+    if (!target) return;
+    dispatch(setUpdated({ key: target.exerciseKey, index: target.setIndex, field: "rest_seconds", value: elapsedSeconds }));
+  }
+
   function handleToggleDone(exerciseKey: string, index: number) {
     const exercise = exercises.find((e) => e.key === exerciseKey);
     const set = exercise?.sets[index];
     const willBeDone = set ? !set.done : false;
     dispatch(setDoneToggled({ key: exerciseKey, index }));
-    // Marking a set done is, in the normal flow, "I just finished this set
-    // right now": auto-starting the rest timer here matches that moment
-    // instead of making rest tracking a separate manual step. A warm-up set
-    // is the exception: nobody rests a full interval after a warm-up.
-    if (willBeDone && exercise && set?.set_type !== "warmup") {
-      setRestTarget({ exerciseKey, setIndex: index, label: `${exercise.name} · Set ${index + 1}` });
+    if (!willBeDone || !exercise) return;
+    // Ticking the next set done ends the rest that has been running since the
+    // previous tick (within one exercise or across two) and records it on that
+    // previous set. The stopwatch is never started from here.
+    if (restStartedAt !== null) {
+      logRest(restTarget, Math.floor((Date.now() - restStartedAt) / 1000));
+      setRestStartedAt(null);
+      setRestTarget(null);
     }
+    setLastDone({ exerciseKey, setIndex: index, label: `${exercise.name} · Set ${index + 1}` });
   }
 
-  function handleRestStop(elapsed: number) {
-    if (restTarget) {
-      dispatch(
-        setUpdated({ key: restTarget.exerciseKey, index: restTarget.setIndex, field: "rest_seconds", value: elapsed })
-      );
-    }
+  function handleRestStart() {
+    setRestTarget(lastDone);
+    setRestStartedAt(Date.now());
+  }
+
+  function handleRestStop(elapsedSeconds: number) {
+    logRest(restTarget, elapsedSeconds);
+    setRestStartedAt(null);
     setRestTarget(null);
   }
 
@@ -386,15 +409,6 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
               calories={calories}
             />
 
-            <RestTimer
-              active={!!restTarget}
-              targetLabel={restTarget?.label}
-              durationSeconds={restSeconds}
-              vibrate={vibrateOnRestEnd}
-              onStop={handleRestStop}
-              onDismiss={() => setRestTarget(null)}
-            />
-
             {exercises.length === 0 ? (
               <View style={styles.emptyState}>
                 <Dumbbell size={22} color={colors.faint} />
@@ -408,7 +422,6 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
                   category={ex.category}
                   sets={ex.sets}
                   isBodyweight={ex.isBodyweight}
-                  imageUrl={ex.imageUrl}
                   note={ex.note}
                   lastSession={lastSessions[ex.name]}
                   onOpenDetail={() => navigation.navigate("ExerciseDetail", { name: ex.name })}
@@ -429,8 +442,7 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
             </Pressable>
 
             <Text style={styles.hint}>
-              Tap a set number to mark it warm-up, drop or failure. Hold it to remove the set. Warm-ups never count
-              toward volume or records.
+              Tap a set number to mark it warm-up, drop or failure. Warm-ups never count toward volume or records.
             </Text>
 
             <Text style={styles.discardLink} onPress={confirmDiscard}>
@@ -440,6 +452,13 @@ export function SessionScreen({ navigation }: MainTabScreenProps<"Session">) {
             <ExercisePicker visible={picking} onPick={handlePick} onClose={() => setPicking(false)} />
           </ScrollView>
         </KeyboardAvoidingView>
+
+        <RestStopwatch
+          startedAtMs={restStartedAt}
+          targetLabel={restTarget?.label}
+          onStart={handleRestStart}
+          onStop={handleRestStop}
+        />
       </SafeAreaView>
     </ScreenBackground>
   );
@@ -480,7 +499,7 @@ const styles = StyleSheet.create({
   finishBtnText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.surface },
   exitBtn: { flexDirection: "row", alignItems: "center", gap: 2 },
   exitBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: colors.muted },
-  content: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxl },
+  content: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: 110 },
   emptyState: {
     alignItems: "center",
     gap: spacing.sm,

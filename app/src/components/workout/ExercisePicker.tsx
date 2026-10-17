@@ -25,6 +25,7 @@ import { STALE_AFTER } from "../../lib/cachePolicy";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { parseLocalDate } from "../../lib/workoutHelpers";
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
+import { FadeSwap } from "../FadeSwap";
 import { ExerciseThumb } from "./ExerciseThumb";
 
 export interface PickedExercise {
@@ -176,7 +177,13 @@ export function ExercisePicker({ visible, onPick, onClose }: Props) {
               </Pressable>
             </View>
 
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.chipRow}
+              contentContainerStyle={styles.chipRowContent}
+              keyboardShouldPersistTaps="handled"
+            >
               {[
                 { key: "recent", label: "Recent" },
                 { key: "all", label: "All" },
@@ -197,10 +204,11 @@ export function ExercisePicker({ visible, onPick, onClose }: Props) {
               ))}
             </ScrollView>
 
+            <FadeSwap trigger={`${searching ? debouncedQuery.trim() : effectiveFilter}`} style={styles.listWrap}>
             <FlatList
               data={results}
               keyExtractor={(item) => item.id}
-              style={{ maxHeight: 360 }}
+              style={styles.list}
               keyboardShouldPersistTaps="handled"
               ListEmptyComponent={
                 !isFetching ? <Text style={styles.emptyText}>No matches. Add it as custom above.</Text> : null
@@ -217,7 +225,7 @@ export function ExercisePicker({ visible, onPick, onClose }: Props) {
                 const lastSession = lastSessions[item.name];
                 return (
                   <Pressable style={styles.item} onPress={() => handlePick(item)}>
-                    <ExerciseThumb uri={item.image_url} size={44} />
+                    <ExerciseThumb name={item.name} category={item.category} muscle={item.muscle_group} size={44} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.itemText}>
                         {item.name}
@@ -240,6 +248,7 @@ export function ExercisePicker({ visible, onPick, onClose }: Props) {
                 );
               }}
             />
+            </FadeSwap>
           </Pressable>
         </Pressable>
       </KeyboardAvoidingView>
@@ -281,7 +290,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   addBtnText: { fontFamily: fonts.bodySemiBold, fontSize: 12.5, color: colors.chalk },
-  chipRow: { flexGrow: 0, marginBottom: spacing.sm },
+  // The sheet shrinks when the keyboard opens; without flexShrink: 0 and a
+  // fixed height the chip row was squashed first and its tops and bottoms cut.
+  chipRow: { flexGrow: 0, flexShrink: 0, height: 40, marginBottom: spacing.sm },
+  chipRowContent: { alignItems: "center", paddingRight: spacing.lg },
+  listWrap: { flexShrink: 1, flexGrow: 0 },
+  list: { maxHeight: 360 },
   chip: {
     backgroundColor: colors.track,
     borderRadius: radii.pill,

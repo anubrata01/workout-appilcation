@@ -9,7 +9,6 @@ import reducer, {
   setTypeCycled,
   setUpdated,
 } from "../activeSessionSlice";
-import preferences, { REST_PRESETS, restSecondsChanged, vibrateOnRestEndChanged } from "../preferencesSlice";
 
 const initial = reducer(undefined, { type: "@@INIT" });
 
@@ -129,30 +128,5 @@ describe("exercise notes", () => {
     state = reducer(state, exerciseNoteChanged({ key: "b", note: "belt on" }));
     expect(state.exercises.map((e) => e.note)).toEqual(["", "belt on"]);
     expect(reducer(state, exerciseNoteChanged({ key: "gone", note: "x" }))).toEqual(state);
-  });
-});
-
-describe("preferences", () => {
-  const start = preferences(undefined, { type: "@@INIT" });
-
-  it("defaults to a 90 second countdown with vibration on", () => {
-    expect(start).toEqual({ restSeconds: 90, vibrateOnRestEnd: true });
-  });
-
-  it("accepts every preset and 0 means stopwatch mode", () => {
-    for (const preset of REST_PRESETS) {
-      expect(preferences(start, restSecondsChanged(preset)).restSeconds).toBe(preset);
-    }
-    expect(REST_PRESETS).toContain(0);
-  });
-
-  it("clamps and rounds out-of-range values", () => {
-    expect(preferences(start, restSecondsChanged(-5)).restSeconds).toBe(0);
-    expect(preferences(start, restSecondsChanged(100000)).restSeconds).toBe(900);
-    expect(preferences(start, restSecondsChanged(61.6)).restSeconds).toBe(62);
-  });
-
-  it("toggles vibration", () => {
-    expect(preferences(start, vibrateOnRestEndChanged(false)).vibrateOnRestEnd).toBe(false);
   });
 });

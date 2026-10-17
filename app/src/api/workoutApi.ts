@@ -176,6 +176,13 @@ export const workoutApi = createApi({
       query: (names) => ({ url: "/v1/workouts/exercises/last-sessions/", method: "POST", body: { names } }),
       providesTags: ["LastSession"],
     }),
+    // Every past session of one exercise with its full set list, newest first
+    // (the "what I did before" list under the note on the workout screen).
+    // Shares the LastSession tag so finishing a workout refreshes it too.
+    getExerciseHistory: builder.query<LastSessionDTO[], string>({
+      query: (name) => `/v1/workouts/exercises/history/?name=${encodeURIComponent(name)}&limit=10`,
+      providesTags: ["LastSession"],
+    }),
     getRoutines: builder.query<RoutineDTO[], void>({
       query: () => "/v1/workouts/templates/",
       providesTags: ["Routine"],
@@ -208,6 +215,7 @@ export const {
   useAddCustomExerciseMutation,
   useGetExerciseDetailQuery,
   useGetExerciseLastSessionsQuery,
+  useGetExerciseHistoryQuery,
   useGetRoutinesQuery,
   useCreateRoutineMutation,
   useUpdateRoutineMutation,

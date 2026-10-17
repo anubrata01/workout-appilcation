@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { Check, Trash2 } from "lucide-react-native";
+import { Check, ChevronDown, ChevronUp, Trash2 } from "lucide-react-native";
 
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
+import { useGetExerciseHistoryQuery } from "../../api/workoutApi";
 import type { ExerciseCategory, LastSessionDTO, SetEntryDTO, SetType } from "../../api/workoutApi";
 import { parseLocalDate } from "../../lib/workoutHelpers";
 import { ExerciseThumb } from "./ExerciseThumb";
@@ -14,7 +15,6 @@ interface Props {
   category: ExerciseCategory;
   sets: SetEntryDTO[];
   isBodyweight?: boolean;
-  imageUrl?: string;
   note?: string;
   lastSession?: LastSessionDTO | null;
   onOpenDetail: () => void;
@@ -52,7 +52,6 @@ export function ExerciseCard({
   category,
   sets,
   isBodyweight,
-  imageUrl,
   note,
   lastSession,
   onOpenDetail,
@@ -81,7 +80,7 @@ export function ExerciseCard({
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <ExerciseThumb uri={imageUrl} size={40} />
+        <ExerciseThumb name={name} category={category} size={40} />
         <Pressable style={{ flex: 1 }} onPress={onOpenDetail}>
           <Text style={styles.name}>
             {name}
@@ -114,6 +113,8 @@ export function ExerciseCard({
         </Pressable>
       )}
 
+      <ExerciseHistory name={name} category={category} />
+
       <View style={styles.setHeaderRow}>
         <Text style={[styles.colLabel, { flex: 0.5 }]}>SET</Text>
         <Text style={[styles.colLabel, { flex: 1.1 }]}>PREVIOUS</Text>
@@ -129,6 +130,7 @@ export function ExerciseCard({
           </>
         )}
         <Text style={[styles.colLabel, { flex: 0.6, textAlign: "right" }]}>DONE</Text>
+        <View style={styles.deleteCol} />
       </View>
 
       {sets.map((s, i) => (
@@ -149,6 +151,41 @@ export function ExerciseCard({
       <Pressable onPress={onAddSet} hitSlop={6}>
         <Text style={styles.addSet}>+ Add set</Text>
       </Pressable>
+    </View>
+  );
+}
+
+function describeHistorySet(category: ExerciseCategory, set: SetEntryDTO): string {
+  const body = category === "cardio" ? `${set.duration_minutes}min ${set.distance_km}km` : `${set.weight}×${set.reps}`;
+  const tag = set.set_type === "warmup" ? "W " : set.set_type === "drop" ? "D " : set.set_type === "failure" ? "F " : "";
+  return `${tag}${body}`;
+}
+
+/** Every earlier session of this exercise, set by set. Fetched only when opened, so it costs no request until asked for. */
+function ExerciseHistory({ name, category }: { name: string; category: ExerciseCategory }) {
+  const [open, setOpen] = useState(false);
+  const { data: sessions, isLoading } = useGetExerciseHistoryQuery(name, { skip: !open });
+
+  return (
+    <View style={styles.historyBox}>
+      <Pressable style={styles.historyToggle} onPress={() => setOpen((v) => !v)} hitSlop={6}>
+        <Text style={styles.historyToggleText}>Previous workouts</Text>
+        {open ? <ChevronUp size={14} color={colors.dim} /> : <ChevronDown size={14} color={colors.dim} />}
+      </Pressable>
+      {open ? (
+        isLoading ? (
+          <Text style={styles.historyEmpty}>Loading…</Text>
+        ) : !sessions || sessions.length === 0 ? (
+          <Text style={styles.historyEmpty}>No earlier sessions of this exercise yet.</Text>
+        ) : (
+          sessions.map((session, i) => (
+            <View key={`${session.date}-${i}`} style={styles.historySession}>
+              <Text style={styles.historyDate}>{formatShortDate(session.date)}</Text>
+              <Text style={styles.historySets}>{session.sets.map((st) => describeHistorySet(category, st)).join("  ·  ")}</Text>
+            </View>
+          ))
+        )
+      ) : null}
     </View>
   );
 }
@@ -217,14 +254,6 @@ function SetRow({
     }
   }
 
-  function confirmRemoveSet() {
-    if (!canRemove) return;
-    Alert.alert(`Remove set ${index + 1}?`, undefined, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Remove", style: "destructive", onPress: onRemove },
-    ]);
-  }
-
   const type = TYPE_STYLE[set.set_type ?? "normal"];
 
   return (
@@ -233,7 +262,6 @@ function SetRow({
         <View style={{ flex: 0.5 }}>
           <Pressable
             onPress={onCycleType}
-            onLongPress={confirmRemoveSet}
             style={[styles.typeChip, { backgroundColor: type.bg }]}
             hitSlop={4}
           >
@@ -266,6 +294,15 @@ function SetRow({
             {set.done ? <Check size={12} color={colors.track} strokeWidth={3} /> : null}
           </Pressable>
         </View>
+        <Pressable
+          onPress={onRemove}
+          disabled={!canRemove}
+          hitSlop={8}
+          style={[styles.deleteCol, !canRemove && styles.deleteDisabled]}
+          accessibilityLabel={`Delete set ${index + 1}`}
+        >
+          <Trash2 size={15} color={colors.muted} />
+        </Pressable>
       </View>
       {set.rest_seconds != null ? <Text style={styles.restBadge}>rest: {set.rest_seconds}s</Text> : null}
     </View>
@@ -331,6 +368,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginLeft: spacing.sm + 24, // roughly aligns under the SET index column
   },
+  deleteCol: { width: 22, alignItems: "center", justifyContent: "center" },
+  deleteDisabled: { opacity: 0.25 },
+  historyBox: { marginBottom: spacing.sm },
+  historyToggle: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", paddingVertical: 2 },
+  historyToggleText: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.dim },
+  historyEmpty: { fontFamily: fonts.body, fontSize: 11.5, color: colors.dim, marginTop: spacing.xs },
+  historySession: { marginTop: spacing.xs + 2, paddingLeft: spacing.sm, borderLeftWidth: 2, borderLeftColor: colors.border },
+  historyDate: { fontFamily: fonts.dataBold, fontSize: 10.5, color: colors.muted },
+  historySets: { fontFamily: fonts.data, fontSize: 11.5, color: colors.chalk, marginTop: 1, lineHeight: 16 },
   addSet: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 12.5,

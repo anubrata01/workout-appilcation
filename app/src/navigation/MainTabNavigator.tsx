@@ -24,7 +24,7 @@ export function MainTabNavigator() {
         tabBarActiveTintColor: colors.chalk,
         tabBarInactiveTintColor: colors.dim,
         tabBarLabelStyle: { fontFamily: fonts.bodySemiBold, fontSize: 10.5 },
-        animation: "shift",
+        animation: "fade",
       }}
     >
       <Tab.Screen

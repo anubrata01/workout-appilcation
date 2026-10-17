@@ -9,7 +9,6 @@ import { nutritionApi } from "../api/nutritionApi";
 import { workoutApi } from "../api/workoutApi";
 import activeSessionReducer from "./activeSessionSlice";
 import authReducer from "./authSlice";
-import preferencesReducer from "./preferencesSlice";
 
 // Only `queries` is persisted — `subscriptions`/`config` are runtime-only
 // bookkeeping RTK Query rebuilds itself; persisting them would just replay a
@@ -31,11 +30,6 @@ const persistedAnalyticsApiReducer = persistReducer(
   { key: "analyticsApi", storage: AsyncStorage, whitelist: ["queries"] },
   analyticsApi.reducer
 );
-// Rest-timer length etc. must survive restarts like any other setting.
-const persistedPreferencesReducer = persistReducer(
-  { key: "preferences", storage: AsyncStorage },
-  preferencesReducer
-);
 // The whole slice, not just a whitelist — status/startedAt/exercises all
 // need to survive the app being killed mid-session, or the timer (and
 // everything logged so far) is just gone. startedAt is a plain timestamp,
@@ -50,7 +44,6 @@ export const store = configureStore({
   reducer: {
     auth: authReducer,
     activeSession: persistedActiveSessionReducer,
-    preferences: persistedPreferencesReducer,
     [baseApi.reducerPath]: baseApi.reducer,
     [workoutApi.reducerPath]: persistedWorkoutApiReducer,
     [analyticsApi.reducerPath]: persistedAnalyticsApiReducer,

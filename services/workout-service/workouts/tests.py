@@ -516,3 +516,48 @@ class RecentExercisesTests(APITestCase):
         self._log(TODAY, "Squat")
         other = f"Bearer {make_access_token(uuid.uuid4())}"
         self.assertEqual(self.client.get("/api/v1/workouts/library/?recent=1", HTTP_AUTHORIZATION=other).data, [])
+
+
+class ExerciseHistoryTests(APITestCase):
+    def setUp(self):
+        self.user_a = str(uuid.uuid4())
+        self.user_b = str(uuid.uuid4())
+        self.auth_a = f"Bearer {make_access_token(self.user_a)}"
+        self.auth_b = f"Bearer {make_access_token(self.user_b)}"
+
+    def _log(self, day, sets, auth):
+        body = {"exercises": [{"name": "Squat", "sets": sets}]}
+        self.client.put(f"/api/v1/workouts/days/{day}/", body, format="json", HTTP_AUTHORIZATION=auth)
+
+    def _get(self, auth, query="name=Squat"):
+        return self.client.get(f"/api/v1/workouts/exercises/history/?{query}", HTTP_AUTHORIZATION=auth)
+
+    def test_returns_every_past_session_newest_first_with_all_sets(self):
+        two_days_ago = (date.today() - timedelta(days=2)).isoformat()
+        self._log(two_days_ago, [{"weight": 80, "reps": 5, "done": True}], self.auth_a)
+        self._log(
+            YESTERDAY,
+            [{"weight": 85, "reps": 5, "done": True}, {"weight": 40, "reps": 10, "done": True, "set_type": "warmup"}],
+            self.auth_a,
+        )
+        resp = self._get(self.auth_a)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual([s["date"] for s in resp.data], [YESTERDAY, two_days_ago])
+        self.assertEqual(len(resp.data[0]["sets"]), 2)
+        self.assertEqual(resp.data[0]["sets"][1]["set_type"], "warmup")
+
+    def test_limit_caps_the_number_of_sessions(self):
+        for offset in range(1, 5):
+            self._log((date.today() - timedelta(days=offset)).isoformat(), [{"weight": 50, "reps": 5, "done": True}], self.auth_a)
+        self.assertEqual(len(self._get(self.auth_a, "name=Squat&limit=2").data), 2)
+
+    def test_other_users_history_is_never_returned(self):
+        self._log(YESTERDAY, [{"weight": 100, "reps": 5, "done": True}], self.auth_a)
+        self.assertEqual(self._get(self.auth_b).data, [])
+
+    def test_unknown_exercise_is_empty_and_missing_name_is_rejected(self):
+        self.assertEqual(self._get(self.auth_a, "name=Nothing").data, [])
+        self.assertEqual(self._get(self.auth_a, "").status_code, 400)
+
+    def test_requires_authentication(self):
+        self.assertEqual(self.client.get("/api/v1/workouts/exercises/history/?name=Squat").status_code, 401)

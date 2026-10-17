@@ -11,4 +11,5 @@ urlpatterns = [
     path("v1/workouts/templates/<uuid:template_id>/", views.WorkoutTemplateDetailView.as_view()),
     path("v1/workouts/templates/<uuid:template_id>/apply/", views.WorkoutTemplateApplyView.as_view()),
     path("v1/workouts/exercises/last-sessions/", views.ExerciseLastSessionsView.as_view()),
+    path("v1/workouts/exercises/history/", views.ExerciseHistoryView.as_view()),
 ]

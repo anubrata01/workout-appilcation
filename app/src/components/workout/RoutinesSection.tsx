@@ -44,7 +44,7 @@ export function RoutinesSection({ routines, onStart, onEdit, onCreate }: Props) 
             <View style={styles.thumbs}>
               {routine.items.slice(0, 3).map((item, i) => (
                 <View key={`${item.name}-${i}`} style={[styles.thumbWrap, { marginLeft: i === 0 ? 0 : -10 }]}>
-                  <ExerciseThumb uri={item.image_url} size={32} />
+                  <ExerciseThumb name={item.name} category={item.category} size={32} />
                 </View>
               ))}
             </View>

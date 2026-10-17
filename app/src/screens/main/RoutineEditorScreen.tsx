@@ -138,7 +138,7 @@ export function RoutineEditorScreen({ navigation, route }: MainStackScreenProps<
           ) : (
             items.map((item, index) => (
               <View key={item.name} style={styles.itemCard}>
-                <ExerciseThumb uri={item.image_url} size={40} />
+                <ExerciseThumb name={item.name} category={item.category} size={40} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.itemName}>{item.name}</Text>
                   <Text style={styles.itemMeta}>

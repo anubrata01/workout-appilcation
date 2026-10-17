@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+
+import { FadeSwap } from "../../components/FadeSwap";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -37,7 +39,9 @@ export function ProgressScreen() {
         </View>
 
         <View style={{ flex: 1 }}>
-          {pane === "overview" ? <ReportsContent /> : pane === "records" ? <PRsContent /> : <BodyPane />}
+          <FadeSwap trigger={pane} style={{ flex: 0 }}>
+            {pane === "overview" ? <ReportsContent /> : pane === "records" ? <PRsContent /> : <BodyPane />}
+          </FadeSwap>
         </View>
       </SafeAreaView>
     </ScreenBackground>

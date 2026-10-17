@@ -37,6 +37,7 @@ import {
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
 import { PrimaryButton } from "../PrimaryButton";
+import { FadeSwap } from "../FadeSwap";
 import { MacroDonut } from "./MacroDonut";
 
 export type NewFoodEntry = Omit<FoodEntryDTO, "id">;
@@ -137,7 +138,7 @@ export function AddFoodSheet({ visible, initialMeal, onAdd, onClose }: Props) {
           <View style={{ width: 28 }} />
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mealRow} contentContainerStyle={{ gap: spacing.sm }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mealRow} contentContainerStyle={styles.mealRowContent}>
           {MEALS.map((m) => (
             <Pressable key={m} onPress={() => setMeal(m)} style={[styles.mealChip, meal === m && styles.mealChipActive]}>
               <Text style={[styles.mealChipText, meal === m && styles.mealChipTextActive]}>{MEAL_LABEL[m]}</Text>
@@ -145,6 +146,7 @@ export function AddFoodSheet({ visible, initialMeal, onAdd, onClose }: Props) {
           ))}
         </ScrollView>
 
+        <FadeSwap trigger={selected ? `detail-${selected.id}` : `${tab}-${debounced}`}>
         {selected ? (
           <FoodDetail food={selected} meal={meal} onAdd={(entry) => addEntry(entry)} />
         ) : (
@@ -253,6 +255,7 @@ export function AddFoodSheet({ visible, initialMeal, onAdd, onClose }: Props) {
             )}
           </>
         )}
+        </FadeSwap>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -469,12 +472,15 @@ const styles = StyleSheet.create({
   },
   topBtn: { width: 28, alignItems: "flex-start" },
   topTitle: { fontFamily: fonts.display, fontSize: 22, letterSpacing: 1, color: colors.chalk },
-  mealRow: { flexGrow: 0, paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
+  // flexShrink: 0 and a fixed height keep the chips whole when the keyboard
+  // shrinks the sheet (a horizontal ScrollView otherwise gets squashed first).
+  mealRow: { flexGrow: 0, flexShrink: 0, height: 44, marginBottom: spacing.sm },
+  mealRowContent: { gap: spacing.sm, paddingHorizontal: spacing.lg, alignItems: "center" },
   mealChip: { backgroundColor: colors.track, borderRadius: radii.pill, paddingHorizontal: spacing.md + 2, paddingVertical: 7 },
   mealChipActive: { backgroundColor: colors.chalk },
   mealChipText: { fontFamily: fonts.bodySemiBold, fontSize: 12.5, color: colors.muted },
   mealChipTextActive: { color: colors.surface },
-  tabRow: { flexDirection: "row", paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
+  tabRow: { flexDirection: "row", flexShrink: 0, paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
   tab: { flex: 1, alignItems: "center", paddingVertical: spacing.sm + 2, borderBottomWidth: 2, borderBottomColor: "transparent" },
   tabActive: { borderBottomColor: colors.accent },
   tabText: { fontFamily: fonts.bodySemiBold, fontSize: 12.5, color: colors.dim },

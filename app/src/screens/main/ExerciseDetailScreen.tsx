@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ChevronDown, ChevronLeft, ChevronUp, Trophy } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -24,7 +24,6 @@ function shortDate(iso: string): string {
 export function ExerciseDetailScreen({ navigation, route }: MainStackScreenProps<"ExerciseDetail">) {
   const { name } = route.params;
   const [howToOpen, setHowToOpen] = useState(false);
-  const [heroFailed, setHeroFailed] = useState(false);
 
   const { data: detail } = useGetExerciseDetailQuery(name);
   const { data: records } = useGetExerciseRecordsQuery(name, { refetchOnMountOrArgChange: STALE_AFTER.analytics });
@@ -33,7 +32,6 @@ export function ExerciseDetailScreen({ navigation, route }: MainStackScreenProps
   const weightPoints = points.map((p) => ({ label: shortDate(p.date), value: p.weight }));
   const repsPoints = points.map((p) => ({ label: shortDate(p.date), value: p.reps }));
   const hasHistory = (records?.sessions ?? 0) > 0;
-  const heroUri = detail?.image_url;
 
   return (
     <ScreenBackground>
@@ -49,13 +47,9 @@ export function ExerciseDetailScreen({ navigation, route }: MainStackScreenProps
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
-          {heroUri && !heroFailed ? (
-            <Image source={{ uri: heroUri }} style={styles.hero} resizeMode="cover" onError={() => setHeroFailed(true)} />
-          ) : (
-            <View style={[styles.hero, styles.heroEmpty]}>
-              <ExerciseThumb size={64} />
-            </View>
-          )}
+          <View style={[styles.hero, styles.heroEmpty]}>
+            <ExerciseThumb name={name} category={detail?.category} muscle={detail?.muscle_group} size={96} />
+          </View>
 
           <View style={styles.tagRow}>
             {detail?.muscle_group ? <Text style={styles.tag}>{detail.muscle_group}</Text> : null}
@@ -155,7 +149,7 @@ const styles = StyleSheet.create({
   back: { padding: 2 },
   headerTitle: { flex: 1, textAlign: "center", fontFamily: fonts.display, fontSize: 22, letterSpacing: 1, color: colors.chalk },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl * 2 },
-  hero: { width: "100%", height: 200, borderRadius: radii.lg, backgroundColor: colors.track },
+  hero: { width: "100%", height: 140, borderRadius: radii.lg, backgroundColor: colors.track },
   heroEmpty: { alignItems: "center", justifyContent: "center" },
   tagRow: { flexDirection: "row", gap: spacing.sm, flexWrap: "wrap", marginTop: spacing.md },
   tag: {

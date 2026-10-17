@@ -384,3 +384,53 @@ class ExerciseLastSessionsView(APIView):
                     ],
                 }
         return Response(results)
+
+
+class ExerciseHistoryView(APIView):
+    """
+    GET /api/v1/workouts/exercises/history/?name=&limit=10
+
+    Every past session of one exercise, newest first, with the full set list,
+    so the workout screen can show "what I did before" under the note. Only
+    sessions that have sets are returned; at most 30 are ever sent.
+    """
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "workout-read"
+
+    def get(self, request):
+        name = request.query_params.get("name", "").strip()
+        if not name:
+            return Response({"detail": "name is required."}, status=status.HTTP_400_BAD_REQUEST)
+        limit = _int_param(request, "limit", 10, minimum=1, maximum=30)
+        exercises = (
+            Exercise.objects.filter(day__user_id=request.user.id, name=name)
+            .select_related("day")
+            .prefetch_related("sets")
+            .order_by("-day__date", "-id")[: limit * 2]
+        )
+        sessions = []
+        for exercise in exercises:
+            sets = list(exercise.sets.all())
+            if not sets:
+                continue
+            sessions.append(
+                {
+                    "date": str(exercise.day.date),
+                    "sets": [
+                        {
+                            "weight": s.weight,
+                            "reps": s.reps,
+                            "duration_minutes": s.duration_minutes,
+                            "distance_km": s.distance_km,
+                            "rest_seconds": s.rest_seconds,
+                            "done": s.done,
+                            "set_type": s.set_type,
+                        }
+                        for s in sets
+                    ],
+                }
+            )
+            if len(sessions) >= limit:
+                break
+        return Response(sessions)

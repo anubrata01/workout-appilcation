@@ -10,20 +10,13 @@ import { useDeleteAccountMutation, useLogoutMutation, useMeQuery } from "../../a
 import { clearTokens } from "../../lib/secureStorage";
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import { loggedOut } from "../../store/authSlice";
-import { REST_PRESETS, restSecondsChanged, vibrateOnRestEndChanged } from "../../store/preferencesSlice";
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
 import type { MainStackScreenProps } from "../../navigation/types";
-
-function restLabel(seconds: number): string {
-  if (seconds === 0) return "Stopwatch";
-  return seconds < 60 ? `${seconds}s` : seconds % 60 === 0 ? `${seconds / 60} min` : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-}
 
 /** App flow doc §2.11: workout preferences, account rows and opt-in reminders. */
 export function SettingsScreen({ navigation }: MainStackScreenProps<"Settings">) {
   const dispatch = useAppDispatch();
   const refreshToken = useAppSelector((s) => s.auth.refreshToken);
-  const { restSeconds, vibrateOnRestEnd } = useAppSelector((s) => s.preferences);
   const { data: user } = useMeQuery();
   const [logout] = useLogoutMutation();
   const [deleteAccount, { isLoading: deleting }] = useDeleteAccountMutation();
@@ -70,35 +63,6 @@ export function SettingsScreen({ navigation }: MainStackScreenProps<"Settings">)
 
         <ScrollView contentContainerStyle={styles.content}>
           {user ? <Text style={styles.email}>{user.email}</Text> : null}
-
-          <Text style={styles.sectionLabel}>Rest timer</Text>
-          <View style={styles.card}>
-            <Text style={styles.cardHint}>
-              How long to rest after a set. Pick Stopwatch to just count up and record how long you actually rested.
-            </Text>
-            <View style={styles.chipRow}>
-              {REST_PRESETS.map((preset) => (
-                <Pressable
-                  key={preset}
-                  onPress={() => dispatch(restSecondsChanged(preset))}
-                  style={[styles.chip, restSeconds === preset && styles.chipActive]}
-                >
-                  <Text style={[styles.chipText, restSeconds === preset && styles.chipTextActive]}>{restLabel(preset)}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <View style={[styles.switchRow, restSeconds === 0 && { opacity: 0.4 }]}>
-              <Text style={styles.switchLabel}>Vibrate when rest ends</Text>
-              <Switch
-                value={vibrateOnRestEnd}
-                disabled={restSeconds === 0}
-                onValueChange={(v) => {
-                  dispatch(vibrateOnRestEndChanged(v));
-                }}
-                trackColor={{ true: colors.accent }}
-              />
-            </View>
-          </View>
 
           <ReminderSettings />
 
