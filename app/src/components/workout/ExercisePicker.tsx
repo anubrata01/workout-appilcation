@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { memo, useCallback, useMemo, useState } from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -75,6 +75,40 @@ function formatShortDate(iso: string): string {
   return parseLocalDate(iso).toLocaleDateString("en-US", { day: "numeric", month: "short" });
 }
 
+interface PickerRowProps {
+  item: LibraryItemDTO;
+  pr?: PersonalRecordDTO;
+  lastSession?: LastSessionDTO | null;
+  onPick: (item: LibraryItemDTO) => void;
+}
+
+/** One library row. Memoised: scrolling and unrelated state changes in the sheet must not redraw the SVG thumbnails. */
+const PickerRow = memo(function PickerRow({ item, pr, lastSession, onPick }: PickerRowProps) {
+  return (
+    <Pressable style={styles.item} onPress={() => onPick(item)}>
+      <ExerciseThumb name={item.name} category={item.category} muscle={item.muscle_group} size={44} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.itemText}>
+          {item.name}
+          {item.category === "cardio" ? <Text style={styles.itemTag}>  cardio</Text> : null}
+          {item.is_bodyweight ? <Text style={styles.itemTag}>  bodyweight</Text> : null}
+        </Text>
+        {item.muscle_group ? <Text style={styles.itemMeta}>{item.muscle_group}</Text> : null}
+        {lastSession ? (
+          <Text style={styles.itemHistory}>
+            ({formatShortDate(lastSession.date)}: {formatLastSession(item.category, lastSession)})
+          </Text>
+        ) : null}
+        {pr ? (
+          <Text style={styles.itemRecord}>
+            Record {pr.weight}kg × {pr.reps} ({formatShortDate(pr.date)})
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+});
+
 export function ExercisePicker({ visible, onPick, onClose }: Props) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("recent");
@@ -145,10 +179,13 @@ export function ExercisePicker({ visible, onPick, onClose }: Props) {
     reset();
   }
 
-  function handlePick(item: LibraryItemDTO) {
-    onPick({ name: item.name, category: item.category, isBodyweight: item.is_bodyweight, imageUrl: item.image_url });
-    reset();
-  }
+  const handlePick = useCallback(
+    (item: LibraryItemDTO) => {
+      onPick({ name: item.name, category: item.category, isBodyweight: item.is_bodyweight, imageUrl: item.image_url });
+      reset();
+    },
+    [onPick] // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   const canShowMore = !showingRecent && !searching && results.length >= limit && limit < MAX_LIMIT;
 
@@ -220,33 +257,21 @@ export function ExercisePicker({ visible, onPick, onClose }: Props) {
                   </Pressable>
                 ) : null
               }
-              renderItem={({ item }) => {
-                const pr = prByName.get(item.name);
-                const lastSession = lastSessions[item.name];
-                return (
-                  <Pressable style={styles.item} onPress={() => handlePick(item)}>
-                    <ExerciseThumb name={item.name} category={item.category} muscle={item.muscle_group} size={44} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.itemText}>
-                        {item.name}
-                        {item.category === "cardio" ? <Text style={styles.itemTag}>  cardio</Text> : null}
-                        {item.is_bodyweight ? <Text style={styles.itemTag}>  bodyweight</Text> : null}
-                      </Text>
-                      {item.muscle_group ? <Text style={styles.itemMeta}>{item.muscle_group}</Text> : null}
-                      {lastSession ? (
-                        <Text style={styles.itemHistory}>
-                          ({formatShortDate(lastSession.date)}: {formatLastSession(item.category, lastSession)})
-                        </Text>
-                      ) : null}
-                      {pr ? (
-                        <Text style={styles.itemRecord}>
-                          Record {pr.weight}kg × {pr.reps} ({formatShortDate(pr.date)})
-                        </Text>
-                      ) : null}
-                    </View>
-                  </Pressable>
-                );
-              }}
+              renderItem={({ item }) => (
+                <PickerRow
+                  item={item}
+                  pr={prByName.get(item.name)}
+                  lastSession={lastSessions[item.name]}
+                  onPick={handlePick}
+                />
+              )}
+              // Each row draws a small SVG figure; keep only a window of rows
+              // mounted and render them in small batches so scrolling stays smooth.
+              initialNumToRender={10}
+              maxToRenderPerBatch={8}
+              updateCellsBatchingPeriod={40}
+              windowSize={7}
+              removeClippedSubviews
             />
             </FadeSwap>
           </Pressable>

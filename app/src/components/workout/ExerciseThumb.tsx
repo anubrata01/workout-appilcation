@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { memo, useMemo } from "react";
 import { View } from "react-native";
 import Body from "react-native-body-highlighter";
 import type { ExtendedBodyPart } from "react-native-body-highlighter";
@@ -23,7 +23,7 @@ const FIGURE_HEIGHT = 400;
  * the style of fitness anatomy illustrations. It is drawn from vector data
  * bundled with the app, not downloaded, so it is instant and works offline.
  */
-export function ExerciseThumb({ name, category, muscle, size = 44 }: Props) {
+export const ExerciseThumb = memo(function ExerciseThumb({ name, category, muscle, size = 44 }: Props) {
   const highlight = useMemo(() => muscleHighlightFor(name, category, muscle), [name, category, muscle]);
   const data: ExtendedBodyPart[] = useMemo(
     () => [
@@ -36,6 +36,9 @@ export function ExerciseThumb({ name, category, muscle, size = 44 }: Props) {
 
   return (
     <View
+      // The figure never animates, so let Android draw it once as a texture
+      // instead of re-rasterising hundreds of SVG paths while a list scrolls.
+      renderToHardwareTextureAndroid
       style={{
         width: size,
         height: size,
@@ -57,4 +60,4 @@ export function ExerciseThumb({ name, category, muscle, size = 44 }: Props) {
       />
     </View>
   );
-}
+});
