@@ -5,6 +5,7 @@ interface Props {
   /** Changing this value plays a short fade-in on the content, e.g. the active tab or the search term. */
   trigger: string | number;
   children: ReactNode;
+  /** Layout of the wrapper. It adds none of its own: pass flex: 1 only where the parent has a fixed height. */
   style?: StyleProp<ViewStyle>;
 }
 
@@ -26,5 +27,5 @@ export function FadeSwap({ trigger, children, style }: Props) {
     Animated.timing(opacity, { toValue: 1, duration: 220, useNativeDriver: true }).start();
   }, [trigger, opacity]);
 
-  return <Animated.View style={[{ flex: 1, opacity }, style]}>{children}</Animated.View>;
+  return <Animated.View style={[{ opacity }, style]}>{children}</Animated.View>;
 }

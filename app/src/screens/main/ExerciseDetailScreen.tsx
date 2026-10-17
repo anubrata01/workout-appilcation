@@ -48,7 +48,7 @@ export function ExerciseDetailScreen({ navigation, route }: MainStackScreenProps
 
         <ScrollView contentContainerStyle={styles.content}>
           <View style={[styles.hero, styles.heroEmpty]}>
-            <ExerciseThumb name={name} category={detail?.category} muscle={detail?.muscle_group} size={96} />
+            <ExerciseThumb name={name} category={detail?.category} muscle={detail?.muscle_group} size={130} />
           </View>
 
           <View style={styles.tagRow}>

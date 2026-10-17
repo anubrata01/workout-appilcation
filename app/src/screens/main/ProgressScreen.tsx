@@ -39,7 +39,7 @@ export function ProgressScreen() {
         </View>
 
         <View style={{ flex: 1 }}>
-          <FadeSwap trigger={pane} style={{ flex: 0 }}>
+          <FadeSwap trigger={pane}>
             {pane === "overview" ? <ReportsContent /> : pane === "records" ? <PRsContent /> : <BodyPane />}
           </FadeSwap>
         </View>

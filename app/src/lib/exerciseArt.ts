@@ -1,31 +1,15 @@
+import type { Slug } from "react-native-body-highlighter";
+
 import type { ExerciseCategory } from "../api/workoutApi";
+import { MUSCLE_SLUGS } from "./muscleMap";
 
-/** The families of abstract artwork an exercise can get. */
-export type ArtGroup =
-  | "chest"
-  | "back"
-  | "shoulders"
-  | "arms"
-  | "legs"
-  | "glutes"
-  | "core"
-  | "cardio"
-  | "full";
+/** Colour of the muscles an exercise works, and the paler tone for supporting areas. */
+export const WORKED_COLOR = "#E53935";
+export const SUPPORT_COLOR = "#F4B4B1";
 
-/** Soft tint behind the shapes and the stronger colour of the shapes themselves. */
-export const ART_COLORS: Record<ArtGroup, { bg: string; fg: string }> = {
-  chest: { bg: "#FFE3DA", fg: "#E8512B" },
-  back: { bg: "#DDE7FF", fg: "#3F63D8" },
-  shoulders: { bg: "#F6E1FF", fg: "#9A47C9" },
-  arms: { bg: "#FFEFC9", fg: "#D68A00" },
-  legs: { bg: "#D9F3E4", fg: "#1F9D5C" },
-  glutes: { bg: "#FFDDE8", fg: "#D63A72" },
-  core: { bg: "#D8F1F5", fg: "#1789A0" },
-  cardio: { bg: "#FFE0E0", fg: "#D8333A" },
-  full: { bg: "#E8E6E0", fg: "#6B665C" },
-};
+export type MuscleFamily = "chest" | "back" | "shoulders" | "arms" | "legs" | "glutes" | "core" | "cardio" | "full";
 
-const GROUP_BY_MUSCLE: Record<string, ArtGroup> = {
+const FAMILY_BY_MUSCLE: Record<string, MuscleFamily> = {
   chest: "chest",
   back: "back",
   "lower back": "back",
@@ -50,22 +34,64 @@ const GROUP_BY_MUSCLE: Record<string, ArtGroup> = {
 
 // Used when the muscle group isn't known (an exercise on the workout screen
 // only remembers its name). Checked in order, first match wins.
-const NAME_HINTS: [RegExp, ArtGroup][] = [
+const NAME_HINTS: [RegExp, MuscleFamily][] = [
+  [/tricep|skull|pushdown/i, "arms"],
   [/bench|chest|fly|flye|pec|push[- ]?up|dip/i, "chest"],
   [/row|pull[- ]?up|chin[- ]?up|lat |pulldown|deadlift|shrug|back extension/i, "back"],
   [/shoulder|overhead|lateral raise|front raise|face pull|arnold|military/i, "shoulders"],
-  [/curl|tricep|skull|pushdown|forearm|hammer/i, "arms"],
+  [/curl|forearm|hammer/i, "arms"],
   [/squat|lunge|leg |calf|hamstring|quad|step[- ]?up|hip abduct|hip adduct/i, "legs"],
   [/glute|hip thrust|bridge|kickback/i, "glutes"],
   [/crunch|plank|sit[- ]?up|ab |abs|twist|leg raise|core/i, "core"],
-  [/run|walk|cycle|bike|row(er|ing) machine|treadmill|jump|swim|elliptical|stair|cardio|hiit/i, "cardio"],
+  [/run|walk|cycle|bike|rowing machine|treadmill|jump|swim|elliptical|stair|cardio|hiit/i, "cardio"],
 ];
 
-/** Which artwork to draw for an exercise: its muscle group when known, else a guess from the name. */
-export function artGroupFor(name: string, category?: ExerciseCategory, muscleGroup?: string | null): ArtGroup {
+/** The family an exercise belongs to: its muscle group when known, else a guess from the name. */
+export function muscleFamilyFor(name: string, category?: ExerciseCategory, muscleGroup?: string | null): MuscleFamily {
   if (category === "cardio") return "cardio";
-  const fromMuscle = muscleGroup ? GROUP_BY_MUSCLE[muscleGroup.trim().toLowerCase()] : undefined;
+  const fromMuscle = muscleGroup ? FAMILY_BY_MUSCLE[muscleGroup.trim().toLowerCase()] : undefined;
   if (fromMuscle) return fromMuscle;
   const hint = NAME_HINTS.find(([pattern]) => pattern.test(name));
   return hint ? hint[1] : "full";
+}
+
+// Regions lit for a family when no specific muscle is known.
+const FAMILY_SLUGS: Record<MuscleFamily, Slug[]> = {
+  chest: ["chest"],
+  back: ["upper-back", "lower-back", "trapezius"],
+  shoulders: ["deltoids"],
+  arms: ["biceps", "triceps", "forearm"],
+  legs: ["quadriceps", "hamstring", "calves"],
+  glutes: ["gluteal"],
+  core: ["abs", "obliques"],
+  cardio: [],
+  full: [],
+};
+
+const BACK_SLUGS: Slug[] = ["upper-back", "lower-back", "trapezius", "triceps", "hamstring", "gluteal"];
+
+export interface MuscleHighlight {
+  /** Which side of the body diagram to draw. */
+  side: "front" | "back";
+  /** Regions worked, drawn in the strong colour (intensity 2). */
+  worked: Slug[];
+  /** Regions lightly involved, drawn pale (intensity 1); used for cardio and whole-body moves. */
+  support: Slug[];
+}
+
+/**
+ * Which regions of the anatomical figure to highlight for an exercise. A known
+ * muscle group lights exactly that muscle; otherwise the whole family lights
+ * up. Cardio and unrecognised moves show the major muscle groups in pale tones
+ * rather than claiming a specific muscle.
+ */
+export function muscleHighlightFor(name: string, category?: ExerciseCategory, muscleGroup?: string | null): MuscleHighlight {
+  const family = muscleFamilyFor(name, category, muscleGroup);
+  if (family === "cardio" || family === "full") {
+    return { side: "front", worked: [], support: ["chest", "abs", "quadriceps", "deltoids", "biceps", "calves"] };
+  }
+  const exact = muscleGroup ? MUSCLE_SLUGS[muscleGroup.trim().toLowerCase()] : undefined;
+  const worked = exact && exact.length > 0 ? exact : FAMILY_SLUGS[family];
+  const side = worked.some((slug) => BACK_SLUGS.includes(slug)) && !worked.some((slug) => slug === "biceps" || slug === "chest") ? "back" : "front";
+  return { side, worked, support: [] };
 }

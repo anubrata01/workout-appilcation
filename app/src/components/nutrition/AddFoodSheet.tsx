@@ -146,7 +146,7 @@ export function AddFoodSheet({ visible, initialMeal, onAdd, onClose }: Props) {
           ))}
         </ScrollView>
 
-        <FadeSwap trigger={selected ? `detail-${selected.id}` : `${tab}-${debounced}`}>
+        <FadeSwap trigger={selected ? `detail-${selected.id}` : `${tab}-${debounced}`} style={{ flex: 1 }}>
         {selected ? (
           <FoodDetail food={selected} meal={meal} onAdd={(entry) => addEntry(entry)} />
         ) : (
