@@ -21,6 +21,15 @@ const persistedNutritionApiReducer = persistReducer(
   { key: "nutritionApi", storage: AsyncStorage, whitelist: ["queries"] },
   nutritionApi.reducer
 );
+// Analytics are derived server-side and refreshed after each save (see
+// lib/analyticsSync.ts), but persisting the last known numbers means Reports,
+// PRs and the Home streak paint instantly on a cold start instead of showing
+// a skeleton for a network round-trip. They refetch in the background once
+// older than STALE_AFTER.analytics.
+const persistedAnalyticsApiReducer = persistReducer(
+  { key: "analyticsApi", storage: AsyncStorage, whitelist: ["queries"] },
+  analyticsApi.reducer
+);
 // The whole slice, not just a whitelist — status/startedAt/exercises all
 // need to survive the app being killed mid-session, or the timer (and
 // everything logged so far) is just gone. startedAt is a plain timestamp,
@@ -37,7 +46,7 @@ export const store = configureStore({
     activeSession: persistedActiveSessionReducer,
     [baseApi.reducerPath]: baseApi.reducer,
     [workoutApi.reducerPath]: persistedWorkoutApiReducer,
-    [analyticsApi.reducerPath]: analyticsApi.reducer,
+    [analyticsApi.reducerPath]: persistedAnalyticsApiReducer,
     [notificationApi.reducerPath]: notificationApi.reducer,
     [nutritionApi.reducerPath]: persistedNutritionApiReducer,
   },

@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import jwt
+from django.core.cache import cache
 from django.utils.dateparse import parse_datetime
 from rest_framework.test import APITestCase
 
@@ -141,6 +142,7 @@ class WorkoutDayIsolationTests(APITestCase):
 
 class ExerciseLibraryTests(APITestCase):
     def setUp(self):
+        cache.clear()  # the curated-library cache is process-wide; keep tests independent
         self.user_a = str(uuid.uuid4())
         self.auth_a = f"Bearer {make_access_token(self.user_a)}"
 
@@ -232,3 +234,330 @@ class ExerciseLastSessionsTests(APITestCase):
             "/api/v1/workouts/exercises/last-sessions/", {"names": ["Bench Press"]}, format="json", HTTP_AUTHORIZATION=self.auth_b
         )
         self.assertIsNone(resp.data["Bench Press"])
+
+
+class SetTypeAndNoteTests(APITestCase):
+    def setUp(self):
+        self.user = str(uuid.uuid4())
+        self.auth = f"Bearer {make_access_token(self.user)}"
+
+    def test_set_type_and_exercise_note_round_trip(self):
+        payload = {
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "note": "pause at the bottom",
+                    "sets": [
+                        {"weight": 40, "reps": 10, "done": True, "set_type": "warmup"},
+                        {"weight": 60, "reps": 8, "done": True},
+                    ],
+                }
+            ]
+        }
+        put = self.client.put(f"/api/v1/workouts/days/{TODAY}/", payload, format="json", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual(put.status_code, 200)
+        exercise = put.data["exercises"][0]
+        self.assertEqual(exercise["note"], "pause at the bottom")
+        self.assertEqual([s["set_type"] for s in exercise["sets"]], ["warmup", "normal"])  # defaults to normal
+
+    def test_invalid_set_type_rejected(self):
+        payload = {"exercises": [{"name": "Squat", "sets": [{"weight": 1, "reps": 1, "set_type": "banana"}]}]}
+        put = self.client.put(f"/api/v1/workouts/days/{TODAY}/", payload, format="json", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual(put.status_code, 400)
+
+
+class RoutineTests(APITestCase):
+    def setUp(self):
+        self.user_a = str(uuid.uuid4())
+        self.user_b = str(uuid.uuid4())
+        self.auth_a = f"Bearer {make_access_token(self.user_a)}"
+        self.auth_b = f"Bearer {make_access_token(self.user_b)}"
+        self.push_day = {
+            "name": "Push Day",
+            "items": [
+                {"name": "Bench Press", "category": "strength", "is_bodyweight": False, "default_sets": 4},
+                {"name": "Push-Ups", "category": "strength", "is_bodyweight": True},
+            ],
+        }
+
+    def _create(self, auth=None, body=None):
+        return self.client.post(
+            "/api/v1/workouts/templates/", body or self.push_day, format="json", HTTP_AUTHORIZATION=auth or self.auth_a
+        )
+
+    def test_create_list_and_apply(self):
+        created = self._create()
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual([i["name"] for i in created.data["items"]], ["Bench Press", "Push-Ups"])
+        self.assertEqual(created.data["items"][1]["default_sets"], 3)  # defaulted
+
+        listed = self.client.get("/api/v1/workouts/templates/", HTTP_AUTHORIZATION=self.auth_a)
+        self.assertEqual(len(listed.data), 1)
+
+        applied = self.client.post(
+            f"/api/v1/workouts/templates/{created.data['id']}/apply/", format="json", HTTP_AUTHORIZATION=self.auth_a
+        )
+        self.assertEqual(applied.status_code, 200)
+        self.assertEqual(
+            applied.data[0],
+            {"name": "Bench Press", "category": "strength", "is_bodyweight": False, "default_sets": 4, "image_url": ""},
+        )
+        self.assertTrue(applied.data[1]["is_bodyweight"])
+
+    def test_duplicate_name_rejected_but_other_users_may_reuse_it(self):
+        self.assertEqual(self._create().status_code, 201)
+        self.assertEqual(self._create().status_code, 400)
+        self.assertEqual(self._create(auth=self.auth_b).status_code, 201)
+
+    def test_routine_needs_at_least_one_exercise(self):
+        self.assertEqual(self._create(body={"name": "Empty", "items": []}).status_code, 400)
+
+    def test_update_replaces_items_and_can_keep_same_name(self):
+        created = self._create()
+        url = f"/api/v1/workouts/templates/{created.data['id']}/"
+        updated = self.client.put(
+            url,
+            {"name": "Push Day", "items": [{"name": "Overhead Press", "default_sets": 5}]},
+            format="json",
+            HTTP_AUTHORIZATION=self.auth_a,
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual([i["name"] for i in updated.data["items"]], ["Overhead Press"])
+
+    def test_delete_and_isolation(self):
+        created = self._create()
+        url = f"/api/v1/workouts/templates/{created.data['id']}/"
+        self.assertEqual(self.client.get(url, HTTP_AUTHORIZATION=self.auth_b).status_code, 404)
+        self.assertEqual(self.client.delete(url, HTTP_AUTHORIZATION=self.auth_b).status_code, 404)
+        self.assertEqual(self.client.delete(url, HTTP_AUTHORIZATION=self.auth_a).status_code, 204)
+        self.assertEqual(self.client.get(url, HTTP_AUTHORIZATION=self.auth_a).status_code, 404)
+
+
+class LibraryCatalogTests(APITestCase):
+    def setUp(self):
+        from django.core.management import call_command
+
+        cache.clear()
+        call_command("seed_exercise_library")
+        self.user = str(uuid.uuid4())
+        self.auth = f"Bearer {make_access_token(self.user)}"
+
+    def test_catalogue_is_large_and_has_images(self):
+        everything = self.client.get("/api/v1/workouts/library/?limit=500", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual(everything.status_code, 200)
+        self.assertEqual(len(everything.data), 500)  # capped by limit, catalogue is bigger
+        bench = self.client.get("/api/v1/workouts/library/?search=Bench Press", HTTP_AUTHORIZATION=self.auth)
+        curated_bench = next(i for i in bench.data if i["name"] == "Bench Press")
+        self.assertTrue(curated_bench["image_url"].startswith("https://"))
+
+    def test_list_omits_description_but_detail_includes_it(self):
+        listed = self.client.get("/api/v1/workouts/library/?search=Bench Press", HTTP_AUTHORIZATION=self.auth)
+        self.assertNotIn("description", listed.data[0])
+        detail = self.client.get("/api/v1/workouts/library/detail/?name=bench press", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.data["name"], "Bench Press")
+        self.assertTrue(detail.data["description"])
+
+    def test_detail_requires_name_and_unknown_is_null(self):
+        self.assertEqual(
+            self.client.get("/api/v1/workouts/library/detail/", HTTP_AUTHORIZATION=self.auth).status_code, 400
+        )
+        self.assertIsNone(
+            self.client.get("/api/v1/workouts/library/detail/?name=Nope Nope", HTTP_AUTHORIZATION=self.auth).data
+        )
+
+    def test_pagination_and_muscle_filter(self):
+        first = self.client.get("/api/v1/workouts/library/?limit=5", HTTP_AUTHORIZATION=self.auth)
+        second = self.client.get("/api/v1/workouts/library/?limit=5&offset=5", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual(len(first.data), 5)
+        self.assertTrue({i["id"] for i in first.data}.isdisjoint({i["id"] for i in second.data}))
+        chest = self.client.get("/api/v1/workouts/library/?muscle_group=chest&limit=50", HTTP_AUTHORIZATION=self.auth)
+        self.assertTrue(chest.data)
+        self.assertTrue(all(i["muscle_group"] == "chest" for i in chest.data))
+
+    def test_bad_limit_falls_back_instead_of_erroring(self):
+        resp = self.client.get("/api/v1/workouts/library/?limit=abc&offset=-3", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_second_identical_request_is_served_from_memory(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self.client.get("/api/v1/workouts/library/?search=squat", HTTP_AUTHORIZATION=self.auth)
+        with CaptureQueriesContext(connection) as queries:
+            self.client.get("/api/v1/workouts/library/?search=squat", HTTP_AUTHORIZATION=self.auth)
+        # Only the caller's own (tiny) custom-exercise query hits the DB; the curated ~800 are cached.
+        self.assertLessEqual(len(queries), 1)
+
+    def test_users_own_custom_exercise_shadows_curated_one_of_the_same_name(self):
+        self.client.post("/api/v1/workouts/library/", {"name": "Bench Press"}, HTTP_AUTHORIZATION=self.auth)
+        bench = self.client.get("/api/v1/workouts/library/?search=Bench Press", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual([i["name"] for i in bench.data].count("Bench Press"), 1)
+        self.assertFalse(next(i for i in bench.data if i["name"] == "Bench Press")["is_curated"])
+
+
+class MuscleDistributionTests(APITestCase):
+    def setUp(self):
+        from django.core.management import call_command
+
+        cache.clear()
+        call_command("seed_exercise_library")
+        self.user = str(uuid.uuid4())
+        self.auth = f"Bearer {make_access_token(self.user)}"
+
+    def test_counts_done_non_warmup_sets_by_muscle_group(self):
+        payload = {
+            "exercises": [
+                {
+                    "name": "Bench Press",
+                    "sets": [
+                        {"weight": 40, "reps": 10, "done": True, "set_type": "warmup"},
+                        {"weight": 60, "reps": 8, "done": True},
+                        {"weight": 60, "reps": 8, "done": True},
+                        {"weight": 60, "reps": 8, "done": False},
+                    ],
+                },
+                {"name": "Lat Pulldown", "sets": [{"weight": 50, "reps": 10, "done": True}]},
+                {"name": "Totally Made Up Move", "sets": [{"weight": 5, "reps": 5, "done": True}]},
+            ]
+        }
+        self.client.put(f"/api/v1/workouts/days/{TODAY}/", payload, format="json", HTTP_AUTHORIZATION=self.auth)
+
+        resp = self.client.get("/api/v1/workouts/muscle-distribution/?range=week", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual(resp.status_code, 200)
+        groups = {g["muscle_group"]: g for g in resp.data["groups"]}
+        self.assertEqual(groups["chest"]["sets"], 2)  # warm-up and not-done excluded
+        self.assertEqual(groups["chest"]["volume"], 60 * 8 * 2)
+        self.assertEqual(groups["back"]["sets"], 1)
+        self.assertEqual(groups["other"]["sets"], 1)  # unknown names are not dropped
+        self.assertEqual(resp.data["total_sets"], 4)
+        self.assertEqual(resp.data["groups"][0]["muscle_group"], "chest")  # busiest first
+
+    def test_only_the_callers_own_data_counts(self):
+        other = f"Bearer {make_access_token(uuid.uuid4())}"
+        self.client.put(
+            f"/api/v1/workouts/days/{TODAY}/",
+            {"exercises": [{"name": "Bench Press", "sets": [{"weight": 60, "reps": 8, "done": True}]}]},
+            format="json",
+            HTTP_AUTHORIZATION=other,
+        )
+        resp = self.client.get("/api/v1/workouts/muscle-distribution/?range=month", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual(resp.data["total_sets"], 0)
+        self.assertEqual(resp.data["groups"], [])
+        # An unknown range quietly means the default week instead of erroring.
+        self.assertEqual(
+            self.client.get("/api/v1/workouts/muscle-distribution/?range=bogus", HTTP_AUTHORIZATION=self.auth).status_code,
+            200,
+        )
+
+
+class RoutineImageTests(APITestCase):
+    def setUp(self):
+        from django.core.management import call_command
+
+        cache.clear()
+        call_command("seed_exercise_library")
+        self.auth = f"Bearer {make_access_token(uuid.uuid4())}"
+
+    def test_routine_items_carry_the_library_image_for_thumbnails(self):
+        body = {"name": "Chest", "items": [{"name": "Bench Press"}, {"name": "My Own Move"}]}
+        created = self.client.post("/api/v1/workouts/templates/", body, format="json", HTTP_AUTHORIZATION=self.auth)
+        by_name = {i["name"]: i["image_url"] for i in created.data["items"]}
+        self.assertTrue(by_name["Bench Press"].startswith("https://"))
+        self.assertEqual(by_name["My Own Move"], "")  # no library match is fine, just no thumbnail
+
+        listed = self.client.get("/api/v1/workouts/templates/", HTTP_AUTHORIZATION=self.auth)
+        self.assertTrue(listed.data[0]["items"][0]["image_url"].startswith("https://"))
+        applied = self.client.post(
+            f"/api/v1/workouts/templates/{created.data['id']}/apply/", format="json", HTTP_AUTHORIZATION=self.auth
+        )
+        self.assertTrue(applied.data[0]["image_url"].startswith("https://"))
+
+
+class RecentExercisesTests(APITestCase):
+    def setUp(self):
+        from django.core.management import call_command
+
+        cache.clear()
+        call_command("seed_exercise_library")
+        self.auth = f"Bearer {make_access_token(uuid.uuid4())}"
+
+    def _log(self, date, *names):
+        payload = {"exercises": [{"name": n, "sets": [{"weight": 10, "reps": 5, "done": True}]} for n in names]}
+        self.client.put(f"/api/v1/workouts/days/{date}/", payload, format="json", HTTP_AUTHORIZATION=self.auth)
+
+    def test_recent_lists_distinct_logged_exercises_newest_first_with_library_data(self):
+        self._log(YESTERDAY, "Squat", "Bench Press")
+        self._log(TODAY, "Lat Pulldown", "Bench Press")
+
+        resp = self.client.get("/api/v1/workouts/library/?recent=1", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual(resp.status_code, 200)
+        names = [i["name"] for i in resp.data]
+        self.assertEqual(names[:2], ["Lat Pulldown", "Bench Press"])  # today's first, Bench Press not duplicated
+        self.assertEqual(names.count("Bench Press"), 1)
+        bench = next(i for i in resp.data if i["name"] == "Bench Press")
+        self.assertEqual(bench["muscle_group"], "chest")
+        self.assertTrue(bench["image_url"].startswith("https://"))
+
+    def test_recent_keeps_free_hand_names_that_have_no_library_entry(self):
+        self._log(TODAY, "Sitted rowing")
+        resp = self.client.get("/api/v1/workouts/library/?recent=1", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual(resp.data[0]["name"], "Sitted rowing")
+        self.assertEqual(resp.data[0]["image_url"], "")
+        self.assertTrue(resp.data[0]["id"])  # list keys need a stable id
+
+    def test_recent_is_empty_for_a_new_user_and_respects_limit(self):
+        self.assertEqual(self.client.get("/api/v1/workouts/library/?recent=1", HTTP_AUTHORIZATION=self.auth).data, [])
+        self._log(TODAY, "Squat", "Deadlift", "Plank")
+        resp = self.client.get("/api/v1/workouts/library/?recent=1&limit=2", HTTP_AUTHORIZATION=self.auth)
+        self.assertEqual(len(resp.data), 2)
+
+    def test_recent_only_includes_the_callers_own_history(self):
+        self._log(TODAY, "Squat")
+        other = f"Bearer {make_access_token(uuid.uuid4())}"
+        self.assertEqual(self.client.get("/api/v1/workouts/library/?recent=1", HTTP_AUTHORIZATION=other).data, [])
+
+
+class ExerciseHistoryTests(APITestCase):
+    def setUp(self):
+        self.user_a = str(uuid.uuid4())
+        self.user_b = str(uuid.uuid4())
+        self.auth_a = f"Bearer {make_access_token(self.user_a)}"
+        self.auth_b = f"Bearer {make_access_token(self.user_b)}"
+
+    def _log(self, day, sets, auth):
+        body = {"exercises": [{"name": "Squat", "sets": sets}]}
+        self.client.put(f"/api/v1/workouts/days/{day}/", body, format="json", HTTP_AUTHORIZATION=auth)
+
+    def _get(self, auth, query="name=Squat"):
+        return self.client.get(f"/api/v1/workouts/exercises/history/?{query}", HTTP_AUTHORIZATION=auth)
+
+    def test_returns_every_past_session_newest_first_with_all_sets(self):
+        two_days_ago = (date.today() - timedelta(days=2)).isoformat()
+        self._log(two_days_ago, [{"weight": 80, "reps": 5, "done": True}], self.auth_a)
+        self._log(
+            YESTERDAY,
+            [{"weight": 85, "reps": 5, "done": True}, {"weight": 40, "reps": 10, "done": True, "set_type": "warmup"}],
+            self.auth_a,
+        )
+        resp = self._get(self.auth_a)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual([s["date"] for s in resp.data], [YESTERDAY, two_days_ago])
+        self.assertEqual(len(resp.data[0]["sets"]), 2)
+        self.assertEqual(resp.data[0]["sets"][1]["set_type"], "warmup")
+
+    def test_limit_caps_the_number_of_sessions(self):
+        for offset in range(1, 5):
+            self._log((date.today() - timedelta(days=offset)).isoformat(), [{"weight": 50, "reps": 5, "done": True}], self.auth_a)
+        self.assertEqual(len(self._get(self.auth_a, "name=Squat&limit=2").data), 2)
+
+    def test_other_users_history_is_never_returned(self):
+        self._log(YESTERDAY, [{"weight": 100, "reps": 5, "done": True}], self.auth_a)
+        self.assertEqual(self._get(self.auth_b).data, [])
+
+    def test_unknown_exercise_is_empty_and_missing_name_is_rejected(self):
+        self.assertEqual(self._get(self.auth_a, "name=Nothing").data, [])
+        self.assertEqual(self._get(self.auth_a, "").status_code, 400)
+
+    def test_requires_authentication(self):
+        self.assertEqual(self.client.get("/api/v1/workouts/exercises/history/?name=Squat").status_code, 401)

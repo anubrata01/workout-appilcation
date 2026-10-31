@@ -1,10 +1,12 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { Check, Trash2 } from "lucide-react-native";
+import { Check, ChevronDown, ChevronUp, Trash2 } from "lucide-react-native";
 
 import { colors, fonts, radii, spacing } from "../../theme/tokens";
-import type { ExerciseCategory, LastSessionDTO, SetEntryDTO } from "../../api/workoutApi";
+import { useGetExerciseHistoryQuery } from "../../api/workoutApi";
+import type { ExerciseCategory, LastSessionDTO, SetEntryDTO, SetType } from "../../api/workoutApi";
 import { parseLocalDate } from "../../lib/workoutHelpers";
+import { ExerciseThumb } from "./ExerciseThumb";
 
 type SetField = "weight" | "reps" | "duration_minutes" | "distance_km";
 
@@ -13,37 +15,58 @@ interface Props {
   category: ExerciseCategory;
   sets: SetEntryDTO[];
   isBodyweight?: boolean;
+  note?: string;
   lastSession?: LastSessionDTO | null;
+  onOpenDetail: () => void;
   onRemove: () => void;
   onAddSet: () => void;
+  onRemoveSet: (index: number) => void;
   onUpdateSet: (index: number, field: SetField, value: number) => void;
   onToggleDone: (index: number) => void;
+  onCycleSetType: (index: number) => void;
+  onNoteChange: (note: string) => void;
 }
 
 function formatShortDate(iso: string): string {
   return parseLocalDate(iso).toLocaleDateString("en-US", { day: "numeric", month: "short" });
 }
 
-function formatLastSessionSets(category: ExerciseCategory, lastSession: LastSessionDTO): string {
+/** What you did in this same set position last time, e.g. "60×8", for the PREVIOUS column. */
+export function previousSetText(category: ExerciseCategory, previous: SetEntryDTO | undefined): string {
+  if (!previous) return "";
   if (category === "cardio") {
-    return lastSession.sets.map((s) => `${s.duration_minutes}min·${s.distance_km}km`).join(", ");
+    return previous.duration_minutes > 0 ? `${previous.duration_minutes}min` : "";
   }
-  return lastSession.sets.map((s) => `${s.weight}kg×${s.reps}`).join(", ");
+  return previous.weight > 0 || previous.reps > 0 ? `${previous.weight}×${previous.reps}` : "";
 }
+
+const TYPE_STYLE: Record<SetType, { label: string | null; bg: string; fg: string }> = {
+  normal: { label: null, bg: colors.track, fg: colors.dim },
+  warmup: { label: "W", bg: "#FBE7B5", fg: colors.warning },
+  drop: { label: "D", bg: "#DCD7F7", fg: "#5B4FC4" },
+  failure: { label: "F", bg: "#FAD3CD", fg: colors.error },
+};
 
 export function ExerciseCard({
   name,
   category,
   sets,
   isBodyweight,
+  note,
   lastSession,
+  onOpenDetail,
   onRemove,
   onAddSet,
+  onRemoveSet,
   onUpdateSet,
   onToggleDone,
+  onCycleSetType,
+  onNoteChange,
 }: Props) {
+  const [showNote, setShowNote] = useState(!!note);
+
   function confirmRemove() {
-    // Deleting is effectively permanent once saved — it also removes this
+    // Deleting is effectively permanent once saved: it also removes this
     // exercise's contribution to today's PRs/reports the next time Analytics
     // recomputes, so it deserves a confirmation, not a silent one-tap remove.
     Alert.alert(`Remove ${name}?`, "This removes all its sets from today's log.", [
@@ -57,37 +80,57 @@ export function ExerciseCard({
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={{ flex: 1 }}>
+        <ExerciseThumb name={name} category={category} size={40} />
+        <Pressable style={{ flex: 1 }} onPress={onOpenDetail}>
           <Text style={styles.name}>
             {name}
-            {isCardio ? <Text style={styles.bodyweightTag}>  cardio</Text> : null}
-            {isBodyweight ? <Text style={styles.bodyweightTag}>  bodyweight</Text> : null}
+            {isCardio ? <Text style={styles.tag}>  cardio</Text> : null}
+            {isBodyweight ? <Text style={styles.tag}>  bodyweight</Text> : null}
           </Text>
           {lastSession ? (
-            <Text style={styles.lastSession}>
-              ({formatShortDate(lastSession.date)}: {formatLastSessionSets(category, lastSession)})
-            </Text>
-          ) : null}
-        </View>
+            <Text style={styles.lastSession}>Last time, {formatShortDate(lastSession.date)}</Text>
+          ) : (
+            <Text style={styles.lastSession}>Tap for history and records</Text>
+          )}
+        </Pressable>
         <Pressable onPress={confirmRemove} hitSlop={8}>
           <Trash2 size={14} color={colors.muted} />
         </Pressable>
       </View>
 
+      {showNote ? (
+        <TextInput
+          style={styles.noteInput}
+          value={note ?? ""}
+          onChangeText={onNoteChange}
+          placeholder="Note for this exercise"
+          placeholderTextColor={colors.dim}
+          multiline
+        />
+      ) : (
+        <Pressable onPress={() => setShowNote(true)} hitSlop={6}>
+          <Text style={styles.addNote}>+ Add note</Text>
+        </Pressable>
+      )}
+
+      <ExerciseHistory name={name} category={category} />
+
       <View style={styles.setHeaderRow}>
-        <Text style={[styles.colLabel, { flex: 0.6 }]}>SET</Text>
+        <Text style={[styles.colLabel, { flex: 0.5 }]}>SET</Text>
+        <Text style={[styles.colLabel, { flex: 1.1 }]}>PREVIOUS</Text>
         {isCardio ? (
           <>
-            <Text style={styles.colLabel}>DURATION (min)</Text>
-            <Text style={styles.colLabel}>DISTANCE (km)</Text>
+            <Text style={styles.colLabel}>MIN</Text>
+            <Text style={styles.colLabel}>KM</Text>
           </>
         ) : (
           <>
-            <Text style={styles.colLabel}>WEIGHT (kg){isBodyweight ? " · OPT" : ""}</Text>
+            <Text style={styles.colLabel}>{isBodyweight ? "KG (OPT)" : "KG"}</Text>
             <Text style={styles.colLabel}>REPS</Text>
           </>
         )}
         <Text style={[styles.colLabel, { flex: 0.6, textAlign: "right" }]}>DONE</Text>
+        <View style={styles.deleteCol} />
       </View>
 
       {sets.map((s, i) => (
@@ -96,8 +139,12 @@ export function ExerciseCard({
           index={i}
           set={s}
           isCardio={isCardio}
+          previous={previousSetText(category, lastSession?.sets[i])}
+          canRemove={sets.length > 1}
+          onRemove={() => onRemoveSet(i)}
           onUpdateSet={(field, value) => onUpdateSet(i, field, value)}
           onToggleDone={() => onToggleDone(i)}
+          onCycleType={() => onCycleSetType(i)}
         />
       ))}
 
@@ -108,24 +155,86 @@ export function ExerciseCard({
   );
 }
 
+function describeHistorySet(category: ExerciseCategory, set: SetEntryDTO): string {
+  const body = category === "cardio" ? `${set.duration_minutes}min ${set.distance_km}km` : `${set.weight}×${set.reps}`;
+  const tag = set.set_type === "warmup" ? "W " : set.set_type === "drop" ? "D " : set.set_type === "failure" ? "F " : "";
+  return `${tag}${body}`;
+}
+
+/** Every earlier session of this exercise, set by set. Fetched only when opened, so it costs no request until asked for. */
+function ExerciseHistory({ name, category }: { name: string; category: ExerciseCategory }) {
+  const [open, setOpen] = useState(false);
+  const { data: sessions, isLoading } = useGetExerciseHistoryQuery(name, { skip: !open });
+
+  return (
+    <View style={styles.historyBox}>
+      <Pressable style={styles.historyToggle} onPress={() => setOpen((v) => !v)} hitSlop={6}>
+        <Text style={styles.historyToggleText}>Previous workouts</Text>
+        {open ? <ChevronUp size={14} color={colors.dim} /> : <ChevronDown size={14} color={colors.dim} />}
+      </Pressable>
+      {open ? (
+        isLoading ? (
+          <Text style={styles.historyEmpty}>Loading…</Text>
+        ) : !sessions || sessions.length === 0 ? (
+          <Text style={styles.historyEmpty}>No earlier sessions of this exercise yet.</Text>
+        ) : (
+          sessions.map((session, i) => (
+            <View key={`${session.date}-${i}`} style={styles.historySession}>
+              <Text style={styles.historyDate}>{formatShortDate(session.date)}</Text>
+              <Text style={styles.historySets}>{session.sets.map((st) => describeHistorySet(category, st)).join("  ·  ")}</Text>
+            </View>
+          ))
+        )
+      ) : null}
+    </View>
+  );
+}
+
 interface SetRowProps {
   index: number;
   set: SetEntryDTO;
   isCardio: boolean;
+  previous: string;
+  canRemove: boolean;
+  onRemove: () => void;
   onUpdateSet: (field: SetField, value: number) => void;
   onToggleDone: () => void;
+  onCycleType: () => void;
 }
 
 // Values are edited as free text locally, not derived straight from the
-// numeric prop on every keystroke — a controlled input that reformats via
+// numeric prop on every keystroke: a controlled input that reformats via
 // parseFloat(v) -> String(...) on every change strips a trailing "." the
 // instant you type it (parseFloat("23.") === 23), so "23.5" was never
 // reachable one digit at a time. Keeping local text state means the field
 // only reflects what was actually typed; onUpdateSet still fires on every
 // change so the parsed number reaches the parent/Redux immediately.
-function SetRow({ index, set, isCardio, onUpdateSet, onToggleDone }: SetRowProps) {
-  const [primaryText, setPrimaryText] = useState(String(isCardio ? set.duration_minutes : set.weight));
-  const [secondaryText, setSecondaryText] = useState(String(isCardio ? set.distance_km : set.reps));
+//
+// The effects below re-sync the text when the NUMBER changes from outside
+// (removing a set above shifts later rows up under the same React key), but
+// leave it alone while it still parses to the same number, so "23." survives.
+function SetRow({
+  index,
+  set,
+  isCardio,
+  previous,
+  canRemove,
+  onRemove,
+  onUpdateSet,
+  onToggleDone,
+  onCycleType,
+}: SetRowProps) {
+  const primaryValue = isCardio ? set.duration_minutes : set.weight;
+  const secondaryValue = isCardio ? set.distance_km : set.reps;
+  const [primaryText, setPrimaryText] = useState(String(primaryValue));
+  const [secondaryText, setSecondaryText] = useState(String(secondaryValue));
+
+  useEffect(() => {
+    if ((parseFloat(primaryText) || 0) !== primaryValue) setPrimaryText(String(primaryValue));
+  }, [primaryValue]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if ((parseFloat(secondaryText) || 0) !== secondaryValue) setSecondaryText(String(secondaryValue));
+  }, [secondaryValue]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handlePrimaryChange(v: string) {
     if (!/^\d*\.?\d*$/.test(v)) return; // digits and at most one decimal point
@@ -145,10 +254,23 @@ function SetRow({ index, set, isCardio, onUpdateSet, onToggleDone }: SetRowProps
     }
   }
 
+  const type = TYPE_STYLE[set.set_type ?? "normal"];
+
   return (
     <View style={styles.setRowWrap}>
       <View style={styles.setRow}>
-        <Text style={[styles.setIndex, { flex: 0.6 }]}>{index + 1}</Text>
+        <View style={{ flex: 0.5 }}>
+          <Pressable
+            onPress={onCycleType}
+            style={[styles.typeChip, { backgroundColor: type.bg }]}
+            hitSlop={4}
+          >
+            <Text style={[styles.typeChipText, { color: type.fg }]}>{type.label ?? index + 1}</Text>
+          </Pressable>
+        </View>
+        <Text style={[styles.previous, { flex: 1.1 }]} numberOfLines={1}>
+          {previous}
+        </Text>
         <TextInput
           value={primaryText}
           onChangeText={handlePrimaryChange}
@@ -172,10 +294,17 @@ function SetRow({ index, set, isCardio, onUpdateSet, onToggleDone }: SetRowProps
             {set.done ? <Check size={12} color={colors.track} strokeWidth={3} /> : null}
           </Pressable>
         </View>
+        <Pressable
+          onPress={onRemove}
+          disabled={!canRemove}
+          hitSlop={8}
+          style={[styles.deleteCol, !canRemove && styles.deleteDisabled]}
+          accessibilityLabel={`Delete set ${index + 1}`}
+        >
+          <Trash2 size={15} color={colors.muted} />
+        </Pressable>
       </View>
-      {set.rest_seconds != null ? (
-        <Text style={styles.restBadge}>rest: {set.rest_seconds}s</Text>
-      ) : null}
+      {set.rest_seconds != null ? <Text style={styles.restBadge}>rest: {set.rest_seconds}s</Text> : null}
     </View>
   );
 }
@@ -189,15 +318,29 @@ const styles = StyleSheet.create({
     padding: spacing.md + 2,
     marginBottom: spacing.md,
   },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: spacing.sm + 2 },
+  header: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.sm },
   name: { fontFamily: fonts.bodyBold, fontSize: 14.5, color: colors.chalk },
-  bodyweightTag: { fontFamily: fonts.data, fontSize: 9.5, color: colors.dim, textTransform: "uppercase" },
+  tag: { fontFamily: fonts.data, fontSize: 9.5, color: colors.dim, textTransform: "uppercase" },
   lastSession: { fontFamily: fonts.data, fontSize: 10.5, color: colors.dim, marginTop: 2 },
+  addNote: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.dim, marginBottom: spacing.sm },
+  noteInput: {
+    fontFamily: fonts.body,
+    fontSize: 12.5,
+    color: colors.chalk,
+    backgroundColor: colors.track,
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+    minHeight: 36,
+  },
   setHeaderRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.xs + 2 },
   colLabel: { flex: 1, fontFamily: fonts.bodySemiBold, fontSize: 9.5, color: colors.faint, letterSpacing: 1 },
   setRowWrap: { marginBottom: spacing.xs + 2 },
   setRow: { flexDirection: "row", gap: spacing.sm, alignItems: "center" },
-  setIndex: { fontFamily: fonts.data, fontSize: 12, color: colors.dim },
+  typeChip: { width: 26, height: 26, borderRadius: 7, alignItems: "center", justifyContent: "center" },
+  typeChipText: { fontFamily: fonts.dataBold, fontSize: 12 },
+  previous: { fontFamily: fonts.data, fontSize: 11, color: colors.dim },
   input: {
     flex: 1,
     backgroundColor: colors.track,
@@ -225,6 +368,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginLeft: spacing.sm + 24, // roughly aligns under the SET index column
   },
+  deleteCol: { width: 22, alignItems: "center", justifyContent: "center" },
+  deleteDisabled: { opacity: 0.25 },
+  historyBox: { marginBottom: spacing.sm },
+  historyToggle: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", paddingVertical: 2 },
+  historyToggleText: { fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.dim },
+  historyEmpty: { fontFamily: fonts.body, fontSize: 11.5, color: colors.dim, marginTop: spacing.xs },
+  historySession: { marginTop: spacing.xs + 2, paddingLeft: spacing.sm, borderLeftWidth: 2, borderLeftColor: colors.border },
+  historyDate: { fontFamily: fonts.dataBold, fontSize: 10.5, color: colors.muted },
+  historySets: { fontFamily: fonts.data, fontSize: 11.5, color: colors.chalk, marginTop: 1, lineHeight: 16 },
   addSet: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 12.5,

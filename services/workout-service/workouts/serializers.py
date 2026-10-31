@@ -6,7 +6,7 @@ from .models import Exercise, ExerciseLibraryItem, SetEntry, TemplateExerciseIte
 class SetEntrySerializer(serializers.ModelSerializer):
     class Meta:
         model = SetEntry
-        fields = ["weight", "reps", "duration_minutes", "distance_km", "rest_seconds", "done"]
+        fields = ["weight", "reps", "duration_minutes", "distance_km", "rest_seconds", "done", "set_type"]
 
 
 class ExerciseSerializer(serializers.ModelSerializer):
@@ -15,7 +15,7 @@ class ExerciseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Exercise
-        fields = ["id", "name", "category", "sets"]
+        fields = ["id", "name", "category", "note", "sets"]
 
     def get_id(self, obj):
         return f"ex-{obj.id}"
@@ -71,7 +71,11 @@ class WorkoutDaySerializer(serializers.ModelSerializer):
         for i, ex in enumerate(exercises_data):
             sets_data = ex.pop("sets", [])
             exercise = Exercise.objects.create(
-                day=day, name=ex["name"], category=ex.get("category", "strength"), order=next_order + i
+                day=day,
+                name=ex["name"],
+                category=ex.get("category", "strength"),
+                note=ex.get("note", ""),
+                order=next_order + i,
             )
             for j, s in enumerate(sets_data):
                 SetEntry.objects.create(exercise=exercise, order=j, **s)
@@ -95,10 +99,35 @@ class ExerciseLibraryItemSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "is_curated"]
 
 
+class ExerciseLibraryItemListSerializer(serializers.ModelSerializer):
+    """Lean shape for list responses, no description, so ~900 rows stay small."""
+
+    class Meta:
+        model = ExerciseLibraryItem
+        fields = ["id", "name", "category", "is_bodyweight", "muscle_group", "equipment", "image_url", "is_curated"]
+
+
+def image_urls_for(names, user_id=None):
+    """name (lowercase) -> image_url for the given exercise names, in ONE query.
+    A routine item only stores a name, so thumbnails are joined in at read time."""
+    from django.db.models import Q
+
+    wanted = {n.lower() for n in names}
+    if not wanted:
+        return {}
+    qs = ExerciseLibraryItem.objects.exclude(image_url="")
+    if user_id is not None:
+        qs = qs.filter(Q(owner_user_id__isnull=True) | Q(owner_user_id=user_id))
+    else:
+        qs = qs.filter(owner_user_id__isnull=True)
+    return {name.lower(): url for name, url in qs.values_list("name", "image_url") if name.lower() in wanted}
+
+
 class TemplateExerciseItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = TemplateExerciseItem
-        fields = ["name", "order"]
+        fields = ["name", "order", "category", "is_bodyweight", "default_sets"]
+        extra_kwargs = {"order": {"required": False}}
 
 
 class WorkoutTemplateSerializer(serializers.ModelSerializer):
@@ -106,13 +135,58 @@ class WorkoutTemplateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = WorkoutTemplate
-        fields = ["id", "name", "items", "created_at"]
-        read_only_fields = ["id", "created_at"]
+        fields = ["id", "name", "items", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        images = image_urls_for([item["name"] for item in data["items"]], self.context.get("user_id"))
+        for item in data["items"]:
+            item["image_url"] = images.get(item["name"].lower(), "")
+        return data
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Routine needs a name.")
+        user_id = self.context.get("user_id")
+        qs = WorkoutTemplate.objects.filter(user_id=user_id, name=value)
+        if self.instance is not None:
+            qs = qs.exclude(pk=self.instance.pk)
+        if user_id is not None and qs.exists():
+            raise serializers.ValidationError("You already have a routine with that name.")
+        return value
+
+    def validate_items(self, value):
+        if not value:
+            raise serializers.ValidationError("A routine needs at least one exercise.")
+        return value
+
+    @staticmethod
+    def _write_items(template, items_data):
+        for i, item in enumerate(items_data):
+            TemplateExerciseItem.objects.create(
+                template=template,
+                name=item["name"],
+                order=i,
+                category=item.get("category", "strength"),
+                is_bodyweight=item.get("is_bodyweight", False),
+                default_sets=item.get("default_sets", 3),
+            )
 
     def create(self, validated_data):
         user_id = self.context["user_id"]
         items_data = validated_data.pop("items", [])
         template = WorkoutTemplate.objects.create(user_id=user_id, name=validated_data["name"])
-        for i, item in enumerate(items_data):
-            TemplateExerciseItem.objects.create(template=template, name=item["name"], order=item.get("order", i))
+        self._write_items(template, items_data)
         return template
+
+    def update(self, instance, validated_data):
+        items_data = validated_data.pop("items", None)
+        if "name" in validated_data:
+            instance.name = validated_data["name"]
+            instance.save(update_fields=["name", "updated_at"])
+        if items_data is not None:
+            instance.items.all().delete()
+            self._write_items(instance, items_data)
+        return instance

@@ -1,5 +1,6 @@
 import React from "react";
-import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { ChevronLeft } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PrimaryButton } from "../../components/PrimaryButton";
@@ -9,10 +10,11 @@ import { useDeleteAccountMutation, useLogoutMutation, useMeQuery } from "../../a
 import { clearTokens } from "../../lib/secureStorage";
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import { loggedOut } from "../../store/authSlice";
-import { colors, fonts, spacing } from "../../theme/tokens";
+import { colors, fonts, radii, spacing } from "../../theme/tokens";
+import type { MainStackScreenProps } from "../../navigation/types";
 
-/** App flow doc §2.11 — account rows + opt-in reminders. */
-export function SettingsScreen() {
+/** App flow doc §2.11: workout preferences, account rows and opt-in reminders. */
+export function SettingsScreen({ navigation }: MainStackScreenProps<"Settings">) {
   const dispatch = useAppDispatch();
   const refreshToken = useAppSelector((s) => s.auth.refreshToken);
   const { data: user } = useMeQuery();
@@ -22,7 +24,7 @@ export function SettingsScreen() {
   async function handleLogout() {
     if (refreshToken) {
       await logout({ refresh: refreshToken }).catch(() => {
-        // Best-effort server-side revoke — local logout proceeds regardless.
+        // Best-effort server-side revoke; local logout proceeds regardless.
       });
     }
     await clearTokens();
@@ -51,8 +53,15 @@ export function SettingsScreen() {
   return (
     <ScreenBackground>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
+            <ChevronLeft size={20} color={colors.chalk} />
+          </Pressable>
           <Text style={styles.title}>Settings</Text>
+          <View style={{ width: 20 }} />
+        </View>
+
+        <ScrollView contentContainerStyle={styles.content}>
           {user ? <Text style={styles.email}>{user.email}</Text> : null}
 
           <ReminderSettings />
@@ -72,13 +81,46 @@ export function SettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+  },
+  title: { fontFamily: fonts.display, fontSize: 24, color: colors.chalk, letterSpacing: 1 },
   content: { padding: spacing.xxl, paddingTop: spacing.md, alignItems: "center" },
-  title: { fontFamily: fonts.display, fontSize: 30, color: colors.chalk, letterSpacing: 1, alignSelf: "flex-start" },
-  email: { fontFamily: fonts.data, fontSize: 12, color: colors.muted, alignSelf: "flex-start", marginTop: spacing.xs },
+  email: { fontFamily: fonts.data, fontSize: 12, color: colors.muted, alignSelf: "flex-start" },
+  sectionLabel: {
+    alignSelf: "flex-start",
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10.5,
+    color: colors.muted,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginTop: spacing.xl,
+    marginBottom: spacing.sm,
+  },
+  card: {
+    width: "100%",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+  },
+  cardHint: { fontFamily: fonts.body, fontSize: 12, color: colors.dim, lineHeight: 17, marginBottom: spacing.md },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  chip: { backgroundColor: colors.track, borderRadius: radii.pill, paddingHorizontal: spacing.md + 2, paddingVertical: 7 },
+  chipActive: { backgroundColor: colors.accent },
+  chipText: { fontFamily: fonts.bodySemiBold, fontSize: 12.5, color: colors.muted },
+  chipTextActive: { color: colors.surface },
+  switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.lg },
+  switchLabel: { fontFamily: fonts.bodySemiBold, fontSize: 13.5, color: colors.chalk },
   dangerLink: {
     marginTop: spacing.xxl * 2,
     color: colors.faint,
-    fontFamily: fonts.body,
-    fontSize: 12.5,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
   },
 });

@@ -14,6 +14,10 @@ interface Props {
   color?: string;
   height?: number;
   unit?: string; // appended to the value labels above each dot, e.g. "kg"
+  /** Label only every Nth point (value above the dot, date below), so long histories stay readable. */
+  labelEvery?: number;
+  /** Hide the dots on dense series; the line alone then carries the trend. */
+  showDots?: boolean;
 }
 
 const WIDTH = 320;
@@ -24,7 +28,7 @@ const PADDING_Y = 24;
  * point, labels above the dots and along the x-axis. Built for exercise
  * weight/rep progression and nutrition calorie/water trends; not meant to
  * be a general charting library, just enough for those two. */
-export function LineChart({ points, color = colors.accent, height = 160, unit = "" }: Props) {
+export function LineChart({ points, color = colors.accent, height = 160, unit = "", labelEvery = 1, showDots = true }: Props) {
   if (points.length === 0) {
     return (
       <View style={[styles.empty, { height }]}>
@@ -60,18 +64,26 @@ export function LineChart({ points, color = colors.accent, height = 160, unit = 
         strokeWidth={1}
       />
       <Path d={pathD} stroke={color} strokeWidth={2.5} fill="none" />
-      {coords.map((c, i) => (
-        <React.Fragment key={i}>
-          <Circle cx={c.x} cy={c.y} r={4} fill={color} />
-          <SvgText x={c.x} y={c.y - 10} fontSize={10} fill={colors.chalk} textAnchor="middle">
-            {c.value}
-            {unit}
-          </SvgText>
-          <SvgText x={c.x} y={height - 6} fontSize={9} fill={colors.muted} textAnchor="middle">
-            {c.label}
-          </SvgText>
-        </React.Fragment>
-      ))}
+      {coords.map((c, i) => {
+        // Always label the last point so the current value is never hidden by the thinning.
+        const labelled = i % labelEvery === 0 || i === coords.length - 1;
+        return (
+          <React.Fragment key={i}>
+            {showDots || labelled ? <Circle cx={c.x} cy={c.y} r={showDots ? 4 : 3} fill={color} /> : null}
+            {labelled ? (
+              <>
+                <SvgText x={c.x} y={c.y - 10} fontSize={10} fill={colors.chalk} textAnchor="middle">
+                  {c.value}
+                  {unit}
+                </SvgText>
+                <SvgText x={c.x} y={height - 6} fontSize={9} fill={colors.muted} textAnchor="middle">
+                  {c.label}
+                </SvgText>
+              </>
+            ) : null}
+          </React.Fragment>
+        );
+      })}
     </Svg>
   );
 }

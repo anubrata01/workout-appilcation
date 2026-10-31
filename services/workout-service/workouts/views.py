@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 from django.conf import settings
+from django.core.cache import cache
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -11,10 +14,30 @@ from rest_framework.views import APIView
 from .events import publish_set_logged
 from .models import Exercise, ExerciseLibraryItem, TemplateExerciseItem, WorkoutDay, WorkoutTemplate
 from .serializers import (
+    ExerciseLibraryItemListSerializer,
     ExerciseLibraryItemSerializer,
     WorkoutDaySerializer,
     WorkoutTemplateSerializer,
+    image_urls_for,
 )
+
+# The curated catalogue is ~900 static rows that only change when the seed
+# command runs, so each (search, category, muscle) combination is cached in
+# process memory instead of being re-queried on every picker open. Per-user
+# custom exercises are tiny and always read fresh, then merged in. It is a
+# per-worker LocMem cache, so a re-seed becomes visible within one TTL.
+LIBRARY_CACHE_SECONDS = 600
+LIBRARY_DEFAULT_LIMIT = 100
+LIBRARY_MAX_LIMIT = 500
+
+
+def _int_param(request, name, default, minimum=0, maximum=None):
+    try:
+        value = int(request.query_params.get(name, default))
+    except (TypeError, ValueError):
+        return default
+    value = max(minimum, value)
+    return min(value, maximum) if maximum is not None else value
 
 
 class HealthView(APIView):
@@ -80,20 +103,86 @@ class ExerciseLibraryView(APIView):
         self.throttle_scope = "workout-write" if self.request.method == "POST" else "workout-read"
         return super().get_throttles()
 
-    def get(self, request):
-        qs = ExerciseLibraryItem.objects.filter(
-            Q(owner_user_id__isnull=True) | Q(owner_user_id=request.user.id)
+    def _recent(self, request, limit):
+        """The distinct exercises this user logged most recently, newest first, as library-shaped rows.
+        A logged name with no library entry (typed free-hand long ago) still shows up, just without
+        an image or muscle group."""
+        rows = (
+            Exercise.objects.filter(day__user_id=request.user.id)
+            .order_by("-day__date", "order")
+            .values_list("name", "category")[:600]
         )
-        search = request.query_params.get("search")
-        if search:
-            qs = qs.filter(name__icontains=search)
-        category = request.query_params.get("category")
-        if category:
-            qs = qs.filter(category=category)
-        muscle_group = request.query_params.get("muscle_group")
-        if muscle_group:
-            qs = qs.filter(muscle_group__iexact=muscle_group)
-        return Response(ExerciseLibraryItemSerializer(qs, many=True).data)
+        ordered, seen = [], set()
+        for name, category in rows:
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append((name, category))
+            if len(ordered) >= limit:
+                break
+
+        library = {}
+        entries = ExerciseLibraryItem.objects.filter(
+            Q(owner_user_id__isnull=True) | Q(owner_user_id=request.user.id)
+        ).order_by("-owner_user_id")  # NULLs last in desc on Postgres, own entries win via the later write below
+        for item in sorted(entries, key=lambda i: i.owner_user_id is not None):
+            library[item.name.lower()] = item
+
+        result = []
+        for name, category in ordered:
+            item = library.get(name.lower())
+            if item is not None:
+                result.append(dict(ExerciseLibraryItemListSerializer(item).data))
+            else:
+                result.append(
+                    {
+                        "id": f"recent-{name}",
+                        "name": name,
+                        "category": category,
+                        "is_bodyweight": False,
+                        "muscle_group": "",
+                        "equipment": "",
+                        "image_url": "",
+                        "is_curated": False,
+                    }
+                )
+        return Response(result)
+
+    def get(self, request):
+        search = request.query_params.get("search", "").strip()
+        category = request.query_params.get("category", "").strip()
+        muscle_group = request.query_params.get("muscle_group", "").strip()
+        limit = _int_param(request, "limit", LIBRARY_DEFAULT_LIMIT, minimum=1, maximum=LIBRARY_MAX_LIMIT)
+        offset = _int_param(request, "offset", 0)
+        if request.query_params.get("recent") in ("1", "true"):
+            return self._recent(request, limit)
+
+        def filtered(qs):
+            if search:
+                qs = qs.filter(name__icontains=search)
+            if category:
+                qs = qs.filter(category=category)
+            if muscle_group:
+                qs = qs.filter(muscle_group__iexact=muscle_group)
+            return qs
+
+        cache_key = f"lib:curated:{search.lower()}:{category}:{muscle_group.lower()}"
+        curated = cache.get(cache_key)
+        if curated is None:
+            qs = filtered(ExerciseLibraryItem.objects.filter(owner_user_id__isnull=True))
+            curated = [dict(row) for row in ExerciseLibraryItemListSerializer(qs, many=True).data]
+            cache.set(cache_key, curated, LIBRARY_CACHE_SECONDS)
+
+        own_qs = filtered(ExerciseLibraryItem.objects.filter(owner_user_id=request.user.id))
+        own = [dict(row) for row in ExerciseLibraryItemListSerializer(own_qs, many=True).data]
+        own_names = {row["name"].lower() for row in own}
+        merged = own + [row for row in curated if row["name"].lower() not in own_names]
+        merged.sort(key=lambda row: row["name"].lower())
+
+        response = Response(merged[offset : offset + limit])
+        response["Cache-Control"] = "private, max-age=60"
+        return response
 
     def post(self, request):
         serializer = ExerciseLibraryItemSerializer(data=request.data)
@@ -111,25 +200,139 @@ class WorkoutTemplateListView(APIView):
 
     def get(self, request):
         templates = WorkoutTemplate.objects.filter(user_id=request.user.id).prefetch_related("items")
-        return Response(WorkoutTemplateSerializer(templates, many=True).data)
+        return Response(WorkoutTemplateSerializer(templates, many=True, context={"user_id": request.user.id}).data)
 
     def post(self, request):
         serializer = WorkoutTemplateSerializer(data=request.data, context={"user_id": request.user.id})
         serializer.is_valid(raise_exception=True)
         template = serializer.save()
-        return Response(WorkoutTemplateSerializer(template).data, status=status.HTTP_201_CREATED)
+        return Response(
+            WorkoutTemplateSerializer(template, context={"user_id": request.user.id}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class WorkoutTemplateDetailView(APIView):
+    """GET/PUT/DELETE /api/v1/workouts/templates/<id>/ - always scoped to request.user.id."""
+
+    throttle_classes = [ScopedRateThrottle]
+
+    def get_throttles(self):
+        self.throttle_scope = "workout-read" if self.request.method == "GET" else "workout-write"
+        return super().get_throttles()
+
+    def _get(self, request, template_id):
+        return get_object_or_404(WorkoutTemplate, id=template_id, user_id=request.user.id)
+
+    def get(self, request, template_id):
+        return Response(
+            WorkoutTemplateSerializer(self._get(request, template_id), context={"user_id": request.user.id}).data
+        )
+
+    def put(self, request, template_id):
+        template = self._get(request, template_id)
+        serializer = WorkoutTemplateSerializer(template, data=request.data, context={"user_id": request.user.id})
+        serializer.is_valid(raise_exception=True)
+        template = serializer.save()
+        return Response(WorkoutTemplateSerializer(template, context={"user_id": request.user.id}).data)
+
+    def delete(self, request, template_id):
+        self._get(request, template_id).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class WorkoutTemplateApplyView(APIView):
-    """POST /api/v1/workouts/templates/<id>/apply/ — returns the exercise list to seed into a day (app flow doc 2.7)."""
+    """POST /api/v1/workouts/templates/<id>/apply/ - returns the exercise list to seed into a session (app flow doc 2.7)."""
 
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "workout-write"
 
     def post(self, request, template_id):
         template = get_object_or_404(WorkoutTemplate, id=template_id, user_id=request.user.id)
-        items = TemplateExerciseItem.objects.filter(template=template).order_by("order")
-        return Response([{"name": i.name} for i in items])
+        items = list(TemplateExerciseItem.objects.filter(template=template).order_by("order"))
+        images = image_urls_for([i.name for i in items], request.user.id)
+        return Response(
+            [
+                {
+                    "name": i.name,
+                    "category": i.category,
+                    "is_bodyweight": i.is_bodyweight,
+                    "default_sets": i.default_sets,
+                    "image_url": images.get(i.name.lower(), ""),
+                }
+                for i in items
+            ]
+        )
+
+
+class ExerciseDetailView(APIView):
+    """GET /api/v1/workouts/library/detail/?name= - the full library entry (description, equipment) for one exercise.
+    The list endpoint omits description to keep ~900 rows light."""
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "workout-read"
+
+    def get(self, request):
+        name = request.query_params.get("name", "").strip()
+        if not name:
+            return Response({"detail": "name is required."}, status=status.HTTP_400_BAD_REQUEST)
+        item = (
+            ExerciseLibraryItem.objects.filter(name__iexact=name)
+            .filter(Q(owner_user_id__isnull=True) | Q(owner_user_id=request.user.id))
+            .order_by("-owner_user_id")
+            .first()
+        )
+        if item is None:
+            return Response(None)
+        response = Response(ExerciseLibraryItemSerializer(item).data)
+        response["Cache-Control"] = "private, max-age=300"
+        return response
+
+
+class MuscleDistributionView(APIView):
+    """
+    GET /api/v1/workouts/muscle-distribution/?range=week|month|quarter
+
+    Sets (and volume) per muscle group over the window, counting only done,
+    non-warm-up strength sets. Muscle group comes from joining the logged
+    exercise's name against the library (the caller's own entry wins over the
+    curated one); a logged name with no library match lands in "other".
+    """
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "workout-read"
+    RANGE_DAYS = {"week": 7, "month": 30, "quarter": 90}
+
+    def get(self, request):
+        range_param = request.query_params.get("range", "week")
+        days = self.RANGE_DAYS.get(range_param, 7)
+        today = timezone.localdate()
+        start = today - timedelta(days=days - 1)
+
+        muscle_by_name = {}
+        library = ExerciseLibraryItem.objects.filter(
+            Q(owner_user_id__isnull=True) | Q(owner_user_id=request.user.id)
+        ).values_list("name", "muscle_group", "owner_user_id")
+        for name, muscle, owner in sorted(library, key=lambda r: r[2] is not None):
+            muscle_by_name[name.lower()] = muscle or "other"
+
+        groups = {}
+        total_sets = 0
+        exercises = Exercise.objects.filter(
+            day__user_id=request.user.id, day__date__gte=start, day__date__lte=today, category="strength"
+        ).prefetch_related("sets")
+        for exercise in exercises:
+            muscle = muscle_by_name.get(exercise.name.lower(), "other")
+            for s in exercise.sets.all():
+                if not s.done or s.set_type == "warmup":
+                    continue
+                entry = groups.setdefault(muscle, {"muscle_group": muscle, "sets": 0, "volume": 0.0})
+                entry["sets"] += 1
+                entry["volume"] += s.weight * s.reps
+                total_sets += 1
+
+        ordered = sorted(groups.values(), key=lambda g: g["sets"], reverse=True)
+        return Response({"range": range_param, "total_sets": total_sets, "groups": ordered})
 
 
 class ExerciseLastSessionsView(APIView):
@@ -181,3 +384,53 @@ class ExerciseLastSessionsView(APIView):
                     ],
                 }
         return Response(results)
+
+
+class ExerciseHistoryView(APIView):
+    """
+    GET /api/v1/workouts/exercises/history/?name=&limit=10
+
+    Every past session of one exercise, newest first, with the full set list,
+    so the workout screen can show "what I did before" under the note. Only
+    sessions that have sets are returned; at most 30 are ever sent.
+    """
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "workout-read"
+
+    def get(self, request):
+        name = request.query_params.get("name", "").strip()
+        if not name:
+            return Response({"detail": "name is required."}, status=status.HTTP_400_BAD_REQUEST)
+        limit = _int_param(request, "limit", 10, minimum=1, maximum=30)
+        exercises = (
+            Exercise.objects.filter(day__user_id=request.user.id, name=name)
+            .select_related("day")
+            .prefetch_related("sets")
+            .order_by("-day__date", "-id")[: limit * 2]
+        )
+        sessions = []
+        for exercise in exercises:
+            sets = list(exercise.sets.all())
+            if not sets:
+                continue
+            sessions.append(
+                {
+                    "date": str(exercise.day.date),
+                    "sets": [
+                        {
+                            "weight": s.weight,
+                            "reps": s.reps,
+                            "duration_minutes": s.duration_minutes,
+                            "distance_km": s.distance_km,
+                            "rest_seconds": s.rest_seconds,
+                            "done": s.done,
+                            "set_type": s.set_type,
+                        }
+                        for s in sets
+                    ],
+                }
+            )
+            if len(sessions) >= limit:
+                break
+        return Response(sessions)

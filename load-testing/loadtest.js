@@ -45,5 +45,15 @@ export default function () {
   const reportRes = http.get(`${BASE_URL}/v1/analytics/reports/?range=week`, { headers });
   check(reportRes, { "report: status 200": (r) => r.status === 200 });
 
+  // v3: food search (server-side 10 min cache, so most of these should be hits)
+  // and the exercise library (LocMem cache on curated rows).
+  const terms = ["chicken", "rice", "egg", "paneer", "dal", "banana", "roti", "oats"];
+  const term = terms[Math.floor(Math.random() * terms.length)];
+  const foodRes = http.get(`${BASE_URL}/v1/nutrition/foods/search?q=${term}`, { headers });
+  check(foodRes, { "food search: status 200": (r) => r.status === 200 });
+
+  const libRes = http.get(`${BASE_URL}/v1/workouts/library/?search=${term.slice(0, 3)}`, { headers });
+  check(libRes, { "library: status 200": (r) => r.status === 200 });
+
   sleep(1);
 }

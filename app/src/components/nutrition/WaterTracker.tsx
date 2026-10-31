@@ -6,18 +6,23 @@ import { colors, fonts, radii, spacing } from "../../theme/tokens";
 
 interface Props {
   waterMl: number;
+  /** Daily target in ml from the user's goals, if they set one. */
+  goalMl?: number;
   onChange: (nextMl: number) => void;
 }
 
 const QUICK_ADD_ML = 250;
 
-export function WaterTracker({ waterMl, onChange }: Props) {
+export function WaterTracker({ waterMl, goalMl, onChange }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.left}>
         <Droplet size={18} color="#3B9FD9" />
         <View>
-          <Text style={styles.value}>{(waterMl / 1000).toFixed(waterMl % 1000 === 0 ? 0 : 1)} L</Text>
+          <Text style={styles.value}>
+            {(waterMl / 1000).toFixed(waterMl % 1000 === 0 ? 0 : 1)}
+            {goalMl ? ` / ${(goalMl / 1000).toFixed(goalMl % 1000 === 0 ? 0 : 1)}` : ""} L
+          </Text>
           <Text style={styles.caption}>water today</Text>
         </View>
       </View>
